@@ -258,3 +258,67 @@ Node 26 (whose default directory handling and summary format differ) behave the 
   (Seeked, status, rate), a displayed frame that changes only when a single-shot timer scheduled with
   `msUntil(nextChangeAt)` fires or the anchor changes, a 30 ms unsignalled drift (ignored) and a 150 ms one
   (silent re-anchor). Mutants (estimate = posMs, rate ignored, no silent re-anchor) all fail it.
+
+## D17. Lookup core and adapters (M4)
+
+APIs: `resolver.mjs` (`createResolver({http, cache, now, schedule, random, onUpdate, log})`), `trackinfo.mjs`,
+`match.mjs`, `providers/*.mjs` and `ui/lyrics/{Http,LyricsCache,LyricsController}.qml` are documented in their
+headers. Choices (several came from an Opus review of the first version):
+
+- **Request budget** (acceptance "10 tracks in 5 s → ≤ 2 lookups per provider"): adaptive debounce — 500 ms
+  normally, 2000 ms when a track change follows the previous one within 1.5 s; changes < 200 ms apart are one
+  metadata burst. Each provider also starts at most 2 lookups per 5 s window; a throttled lookup waits and then
+  serves the newest track. `retry()`, `refetch()` and `lookUpAnyway()` are exempt from the throttle.
+- During the debounce the state is `idle` (skip rules are evaluated after it, so bursts do not flash `skipped`).
+- **Once-guard**: an http callback is honoured once per request (double, synchronous, throw-after-callback).
+- **Re-entrancy**: calling the resolver from inside `onUpdate` stops the old pipeline (generation + current-track
+  checks after every emit). `onUpdate` is not re-emitted when nothing changed; throwing `log`/`onUpdate` is
+  swallowed.
+- **Hostile input caps**: titles/artists/albums cut to 300 code points (`clean()` and mappers), at most 8 artist
+  names, at most 20 search candidates; `similarity()` returns 0 when the length ratio is below 0.5. A 100k-name
+  artist or a 300 KB title is processed in < 50 ms in V4 (shared tests).
+- **Ranking**: tier (word 300, line 200, instrumental 150, plain 100) + match (id 30, signature 20, search
+  10 × similarity) + first provider 5 + Unison confidence (high 3, medium 1) − 10 for an unknown duration.
+  Instrumental (150) beats plain but never synced lyrics. Unison `matchedBy` is `id` only when the response says
+  so, else `signature`.
+- **Progressive display**: the 2500 ms swap window starts at the first display. The cache stores the best-ranked
+  version even if the UI kept the first-shown one; a late result updates the cache but never swaps the display.
+- **Provider requests**: LRCLIB `get` uses the full cleaned artist and the title (`titleAlt` when the source is
+  "noisy": browser identity, Topic/VEVO channel, or `Artist - Title` split from the title); LRCLIB search uses
+  `titleAlt` + `primaryArtist`; Unison gets `titleAlt` + the full cleaned artist (SPEC §2.1f). Up to 2 LRCLIB
+  search candidates are fetched by id. v2 → v1 search fallback only on an unexpected shape (incl. entries
+  without the `has*` flags), never on 404/500/network errors.
+- **Rate limits**: cooldown = `Retry-After × (1 + random × 0.3)`, from real responses only; HTTP-date
+  `Retry-After` falls back to 5 s. `ratelimited` status only when nothing was found; auto-retry when the
+  cooldown ends re-queries only the rate-limited providers, at most 5 times per track. Unison
+  `LOOKUP_PENDING` waits ≤ 10 s each (≤ 3 retries); a larger `Retry-After` becomes a provider cooldown.
+- **Cache**: a `notfound` row records the providers asked (in the `provider` column, e.g. `lrclib,unison`; no
+  schema change) and is a miss when an enabled provider is missing from it; a `found` row is a miss when its
+  provider is now disabled. Unparseable/empty provider results count as `notfound` (6 h). A found result from a
+  lookup where another provider failed/rate-limited is cached with `fetchedAt` backdated to live ~1 h. Stale
+  (> 30 days) rows are shown immediately and revalidated in the background (Unison with `If-None-Match`; 304 =
+  refresh); a failed revalidation pushes `fetchedAt` forward ~1 h.
+- **Pins**: `tryNextMatch()` pins the alternate in `track_prefs`; a pinned version that is gone (notfound) drops
+  the pin (rate limit/error keep it). During a provider cooldown `tryNextMatch()` keeps the current lyrics and
+  status and only sets `retryInS`/`retryAt`.
+- **Prefs** (offset, hide, pin) persist even when `lyricsCacheEnabled` is false (they are preferences, not cache);
+  `LyricsCache.clear()` empties only `lyrics_cache`.
+- **Track cleaning**: channel names (` - Topic`, `VEVO`, also without a space: `NameVEVO`) are stripped and the
+  title's `Left - Right` left part becomes the artist when it loosely matches; `- YouTube` tails, `| Official
+  Video`, `【MV】`, `「Title」 Official MV` and decorations are handled in `titleAlt`; file-name titles lose media
+  extensions and leading track numbers (`01 - Artist - Song.flac` → `Artist` / `Song`), and anything that still
+  looks like a path or URL is blanked, so no file name leaves the machine.
+- **normalizeText**: NFKC, diacritics stripped via NFD, ø/đ/ð/ł/æ/œ/ß/þ/ı folded to ASCII, CJK iteration marks
+  (U+3005–3007) and astral characters kept, input capped at 300 chars.
+- **Http.qml**: allow-list rejects userinfo, explicit ports on the real hosts, backslashes and whitespace; the dev
+  origin must be exactly `http://127.0.0.1:<port>` and only while `lyricsDevBaseUrl` is set. Refused URLs call
+  back via `Qt.callLater` without creating an XHR. Timeout = Timer + `abort()`; the 1 MB cap is measured in UTF-8
+  bytes. The dev base URL replaces both provider bases, so one stub server serves both APIs.
+- **Test stubs**: `tests/qml/stubs/` provides minimal pure-QML `org.kde.kirigami`, `org.kde.plasma.components`
+  and `org.kde.plasma.core` modules. `tools/dev.sh` uses them **only** when a probe shows the real modules are
+  missing (this cloud container); on a Plasma desktop the real modules are used. Attached properties cannot be
+  stubbed, so components under `ui/lyrics/` only *read* `Kirigami.Theme`/`Units`/`ColorUtils`.
+- **Live test**: Unison does not find ordinary tracks by title + artist reliably, so the live Unison case looks up
+  a probe-verified YouTube video id.
+- **Fixtures**: `tools/scrub.mjs` also blanks TTML `<composer:meta value>` metadata (artists, album, ISRC,
+  songwriters); the two affected committed fixtures were patched.
