@@ -3,6 +3,7 @@
 // MPRIS microseconds are converted only at the edge with usToMs / msToUs. V4 subset only (D2).
 //
 // anchor = { posMs, wallMs, rate, playing }   (never mutated; report() returns a new one)
+// report() cannot see track changes: callers pass anchor = null when the track changes.
 
 import { CLOCK_DISCONTINUITY_MS, CLOCK_SILENT_MIN_MS } from "./constants.mjs"
 
@@ -14,8 +15,10 @@ export function msToUs(ms) {
     return typeof ms === "number" && isFinite(ms) ? Math.round(ms * 1000) : 0
 }
 
+// A missing or non-finite rate means 1; a rate <= 0 reported while playing means "not advancing" (0).
 function sanitizeRate(r) {
-    return typeof r === "number" && isFinite(r) && r > 0 ? r : 1
+    if (typeof r !== "number" || !isFinite(r)) return 1
+    return r > 0 ? r : 0
 }
 
 /** Build an anchor from a position sample { posMs, wallMs, rate, playing }. */
@@ -43,7 +46,8 @@ export function estimate(anchor, wallNow) {
  * Feed a reported position. Returns { anchor, kind }:
  *   "discontinuity": no anchor yet, status or rate changed, or |report - estimate| > 250 ms -> re-anchored;
  *                    callers must cancel timers and recompute (seek / pause / resume / rate / new track)
- *   "silent":        40..250 ms off -> re-anchored without telling anyone
+ *   "silent":        40..250 ms off -> re-anchored; callers must still reschedule their timer (the estimate
+ *                    moved) but need not reset animations or other visible state
  *   "ignored":       < 40 ms off -> the old anchor is kept (avoids jitter)
  */
 export function report(anchor, sample) {
@@ -68,13 +72,16 @@ export function trackTime(lyricMs, globalOffsetMs, trackOffsetMs) {
 
 /**
  * Wall milliseconds to sleep until `targetMs`, given the current time `nowMs` on the same scale and the
- * playback rate. Rounded up so a timer never fires early; 0 if already due; Infinity when the target is
- * Infinity, rate <= 0, or `playing` is explicitly false.
+ * playback rate. Rounded up so a timer never fires early; 0 if already due; capped at 2^31-1 (Qt Timer
+ * interval is an int). Returns -1 for "never" (target Infinity or NaN, NaN inputs, rate <= 0, or `playing`
+ * explicitly false): callers must stop the timer, never pass Infinity/NaN to Timer.interval.
  */
 export function msUntil(targetMs, nowMs, rate, playing) {
-    if (playing === false) return Infinity
-    if (!(rate > 0) || !isFinite(rate)) return Infinity
-    if (targetMs === Infinity) return Infinity
+    if (playing === false) return -1
+    if (typeof targetMs !== "number" || typeof nowMs !== "number" || typeof rate !== "number") return -1
+    if (!(rate > 0) || !isFinite(rate) || !isFinite(targetMs) || !isFinite(nowMs)) return -1
     const d = targetMs - nowMs
-    return d <= 0 ? 0 : Math.ceil(d / rate)
+    if (d <= 0) return 0
+    const ms = Math.ceil(d / rate)
+    return ms > 2147483647 ? 2147483647 : ms
 }
