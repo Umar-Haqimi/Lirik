@@ -83,3 +83,13 @@ export const LRCLIB_BASE = "https://lrclib.net"
 export const UNISON_BASE = "https://unison.betterlyrics.org"
 export const ALLOWED_HOSTS = ["lrclib.net", "unison.betterlyrics.org"]
 export const PROVIDER_NAMES = ["lrclib", "unison"]
+
+// --- Lookup pipeline additions (M4) ----------------------------------------
+export const DURATION_UNKNOWN_SCORE = 0.2 // a candidate with no duration ranks below any known match
+export const MATCH_CONTAINMENT_SCORE = 0.85 // artist token containment ("Beyonce" in "Beyonce Knowles")
+export const RANK_INSTRUMENTAL = 150 // above plain, below any synced tier
+export const INCOMPLETE_TTL_MS = 3600 * 1000 // cached result from a lookup where a provider failed
+export const MAX_RETRY_AFTER_S = 3600
+export const AUTO_RETRY_MAX = 5 // automatic retries after a cooldown, per track
+export const LRCLIB_MAX_CANDIDATE_TRIES = 2 // get/{id} attempts after a search
+export const ALT_MAX_TRIES = 4

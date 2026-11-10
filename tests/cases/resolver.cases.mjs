@@ -1,0 +1,820 @@
+import { assert } from "./assert.mjs"
+import { fixture } from "../fixtures/fixtures.gen.mjs"
+import {
+    USER_AGENT, NOTFOUND_TTL_MS, FOUND_TTL_MS, CACHE_SCHEMA_V, DEBOUNCE_MS,
+} from "../../src/contents/code/constants.mjs"
+import { createResolver } from "../../src/contents/code/resolver.mjs"
+
+// --- fake world: virtual clock + scheduler + http + cache -----------------------
+
+const T0 = 1000000
+
+function makeEnv() {
+    const env = {
+        t: T0, timers: [], seq: 0, reqs: [], states: [], route: null, rand: 0, cache: null, resolver: null,
+    }
+    env.now = function () { return env.t }
+    env.random = function () { return env.rand }
+    env.schedule = function (ms, fn) {
+        const tm = { at: env.t + ms, fn: fn, seq: env.seq++, dead: false }
+        env.timers.push(tm)
+        return { cancel: function () { tm.dead = true } }
+    }
+    env.advance = function (ms) {
+        const target = env.t + ms
+        for (;;) {
+            let best = null
+            for (let i = 0; i < env.timers.length; i++) {
+                const tm = env.timers[i]
+                if (tm.dead || tm.at > target) continue
+                if (!best || tm.at < best.at || (tm.at === best.at && tm.seq < best.seq)) best = tm
+            }
+            if (!best) break
+            best.dead = true
+            if (best.at > env.t) env.t = best.at
+            best.fn()
+        }
+        env.t = target
+        env.timers = env.timers.filter(function (tm) { return !tm.dead })
+    }
+    env.http = {
+        request: function (spec, cb) {
+            const path = spec.url.replace(/^https?:\/\/[^/]+/, "")
+            const r = {
+                t: env.t, url: spec.url, headers: spec.headers, path: path, aborted: false, answered: false,
+                provider: path.indexOf("/api/") === 0 ? "lrclib" : "unison",
+                kind: classify(path),
+            }
+            r.deliver = function (a) {
+                r.answered = true
+                cb(null, { status: a.status, headers: a.headers || {}, body: a.body === undefined ? "" : a.body })
+            }
+            env.reqs.push(r)
+            const ans = env.route ? env.route(r, env) : null
+            if (ans) {
+                env.schedule(ans.delay === undefined ? 20 : ans.delay, function () {
+                    if (!r.aborted && !r.answered) r.deliver(ans)
+                })
+            }
+            return { abort: function () { r.aborted = true } }
+        },
+    }
+    env.onUpdate = function (s) { env.states.push(s) }
+    return env
+}
+
+function classify(path) {
+    if (path.indexOf("/api/get/") === 0) return "lrclib.getid"
+    if (path.indexOf("/api/get?") === 0) return "lrclib.get"
+    if (path.indexOf("/api/v2/search") === 0) return "lrclib.search"
+    if (path.indexOf("/api/search") === 0) return "lrclib.search1"
+    if (path.indexOf("/lyrics/") === 0) return "unison.id"
+    if (path.indexOf("/lyrics?") === 0) return "unison.lookup"
+    return "other"
+}
+
+function makeCache() {
+    const c = { rows: {}, prefs: {}, calls: [] }
+    c.get = function (k) { c.calls.push("get"); return c.rows[k] ? JSON.parse(JSON.stringify(c.rows[k])) : null }
+    c.put = function (k, r) { c.calls.push("put"); c.rows[k] = JSON.parse(JSON.stringify(r)) }
+    c.touch = function (k, t) { c.calls.push("touch"); if (c.rows[k]) c.rows[k].lastUsedAt = t }
+    c.getPrefs = function (k) { c.calls.push("getPrefs"); return c.prefs[k] ? JSON.parse(JSON.stringify(c.prefs[k])) : null }
+    c.setPrefs = function (k, p) { c.calls.push("setPrefs"); c.prefs[k] = JSON.parse(JSON.stringify(p)) }
+    return c
+}
+
+function fxr(name, extra) {
+    const f = JSON.parse(fixture("api/" + name + ".json"))
+    return Object.assign({ status: f.status, headers: f.headers, body: f.body }, extra || {})
+}
+
+function withId(resp, id) {
+    const o = JSON.parse(resp.body)
+    o.id = Number(id)
+    return Object.assign({}, resp, { body: JSON.stringify(o) })
+}
+
+function withDuration(resp, d) {
+    const o = JSON.parse(resp.body)
+    o.duration = d
+    return Object.assign({}, resp, { body: JSON.stringify(o) })
+}
+
+const EMPTY_LIST = { status: 200, headers: {}, body: "[]" }
+const RL = function (s) { return { status: 429, headers: { "retry-after": String(s) }, body: '{"message":"slow","name":"RateLimit","statusCode":429}' } }
+
+// Default world: LRCLIB and Unison know nothing. Tests override single routes.
+function router(map) {
+    return function (r, env) {
+        const v = map[r.kind]
+        if (v === undefined) {
+            if (r.kind === "lrclib.get" || r.kind === "unison.lookup") return fxr(r.provider === "lrclib" ? "lrclib-get-404" : "unison-lyrics-404")
+            if (r.kind === "lrclib.search") return EMPTY_LIST
+            if (r.kind === "lrclib.search1") return EMPTY_LIST
+            return null
+        }
+        if (typeof v === "function") return v(r, env)
+        return v
+    }
+}
+
+const TRACK = { title: "Placeholder Title", artist: "Placeholder Artist", album: "Placeholder Album", lengthUs: 233e6, artUrl: "", identity: "Spotify" }
+const OTHER_SKIPPED = { title: "Short Thing", artist: "Someone", album: "", lengthUs: 5e6, artUrl: "", identity: "Spotify" }
+
+function track(o) {
+    return Object.assign({}, TRACK, o || {})
+}
+
+function world(map, cfg, opts) {
+    const env = makeEnv()
+    env.route = router(map || {})
+    env.cache = opts && opts.noCache ? null : makeCache()
+    env.resolver = createResolver({
+        http: env.http, cache: env.cache, now: env.now, schedule: env.schedule, random: env.random, onUpdate: env.onUpdate,
+    })
+    env.resolver.setConfig(cfg || {})
+    return env
+}
+
+function count(env, kind) {
+    let n = 0
+    for (let i = 0; i < env.reqs.length; i++) if (env.reqs[i].kind === kind) n++
+    return n
+}
+
+function ofProvider(env, p) {
+    return env.reqs.filter(function (r) { return r.provider === p })
+}
+
+// Run a lookup to completion (debounce + generous time for slow fake responses).
+function lookup(env, meta, ms) {
+    env.resolver.setTrack(meta)
+    env.advance(DEBOUNCE_MS + (ms === undefined ? 5000 : ms))
+    return env.resolver.state()
+}
+
+function statuses(env) {
+    return env.states.map(function (s) { return s.status })
+}
+
+// --- cases ----------------------------------------------------------------------
+
+export const cases = [
+    { name: "debounce: nothing before 500 ms, one request per provider at 500 ms", fn: () => {
+        const env = world({})
+        env.resolver.setTrack(TRACK)
+        assert.equal(env.resolver.state().status, "idle")
+        env.advance(DEBOUNCE_MS - 1)
+        assert.equal(env.reqs.length, 0)
+        env.advance(1)
+        assert.equal(count(env, "lrclib.get"), 1)
+        assert.equal(count(env, "unison.lookup"), 1)
+        assert.equal(env.resolver.state().status, "loading")
+    } },
+    { name: "debounce: a metadata burst with the same key triggers one lookup", fn: () => {
+        const env = world({})
+        env.resolver.setTrack(TRACK)
+        env.advance(100)
+        env.resolver.setTrack(Object.assign({}, TRACK, { artUrl: "https://i.ytimg.com/vi/dQw4w9WgXcQ/x.jpg" }))
+        env.advance(100)
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS)
+        assert.equal(count(env, "lrclib.get"), 1)
+        assert.equal(count(env, "unison.lookup"), 1)
+    } },
+    { name: "debounce: title first, then artist and length (new key restarts the timer)", fn: () => {
+        const env = world({})
+        env.resolver.setTrack({ title: "Placeholder Title", artist: "", album: "", lengthUs: 0, identity: "x" })
+        env.advance(300)
+        env.resolver.setTrack({ title: "Placeholder Title", artist: "Placeholder Artist", album: "", lengthUs: 0, identity: "x" })
+        env.advance(300)
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS - 1)
+        assert.equal(env.reqs.length, 0)
+        env.advance(1)
+        assert.equal(count(env, "lrclib.get"), 1)
+        assert.ok(env.reqs[0].url.indexOf("duration=233") > 0)
+    } },
+    { name: "10 tracks in 5 s produce at most 2 lookups per provider", fn: () => {
+        const env = world({})
+        for (let i = 0; i < 10; i++) {
+            env.resolver.setTrack(track({ title: "Track " + i }))
+            env.advance(450)
+        }
+        env.advance(5000)
+        assert.ok(ofProvider(env, "lrclib").filter(function (r) { return r.kind === "lrclib.get" }).length <= 2)
+        assert.ok(ofProvider(env, "unison").length <= 2)
+        assert.equal(count(env, "lrclib.get"), 1)
+    } },
+    { name: "track change aborts in-flight requests and drops their late answers", fn: () => {
+        const env = world({ "lrclib.get": function () { return null }, "unison.lookup": function () { return null } })
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS + 10)
+        const first = env.reqs.slice()
+        assert.equal(first.length, 2)
+        env.resolver.setTrack(track({ title: "Second Title" }))
+        assert.ok(first[0].aborted && first[1].aborted, "old requests aborted")
+        env.advance(DEBOUNCE_MS + 10)
+        // late answers for the old generation arrive anyway
+        first[0].deliver(fxr("lrclib-get-line"))
+        first[1].deliver(fxr("unison-lyrics-v"))
+        const s = env.resolver.state()
+        assert.equal(s.trackInfo.title, "Second Title")
+        assert.equal(s.lyrics, null)
+        for (let i = 0; i < env.states.length; i++) assert.equal(env.states[i].lyrics, null, "no state ever carried the stale lyrics")
+        assert.ok(env.cache.rows[s.trackKey] === undefined)
+    } },
+    { name: "stale generation: an answer after setTrack(null) is ignored", fn: () => {
+        const env = world({ "lrclib.get": function () { return null } })
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS + 10)
+        const r = env.reqs[0]
+        env.resolver.setTrack(null)
+        r.deliver(fxr("lrclib-get-line"))
+        assert.equal(env.resolver.state().status, "idle")
+        assert.equal(env.resolver.state().lyrics, null)
+    } },
+    { name: "LRCLIB found by get: state, source, credits, cache row", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line") }, { providers: ["lrclib"] })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "synced")
+        assert.equal(s.lyrics.sync, "line")
+        assert.deepEqual(s.source, { provider: "lrclib", id: "3396226", matchedBy: "signature", credits: [{ text: "LRCLIB", url: "https://lrclib.net" }] })
+        assert.equal(s.trackKey, "placeholder artist|placeholder title|placeholder album|233")
+        assert.equal(s.error, null)
+        const row = env.cache.rows[s.trackKey]
+        assert.equal(row.status, "found")
+        assert.equal(row.provider, "lrclib")
+        assert.equal(row.providerId, "3396226")
+        assert.equal(row.schemaV, CACHE_SCHEMA_V)
+        assert.equal(row.payload.sync, "line")
+        assert.equal(row.fetchedAt, row.lastUsedAt)
+    } },
+    { name: "get 404 -> v2 search -> best candidate -> get/{id}", fn: () => {
+        const env = world({
+            "lrclib.search": fxr("lrclib-v2-search"),
+            "lrclib.getid": function (r) { return withId(fxr("lrclib-get-line"), r.path.split("/").pop()) },
+        }, { providers: ["lrclib"] })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "synced")
+        assert.equal(s.source.matchedBy, "search")
+        assert.equal(s.source.id, "7621759")
+        assert.ok(count(env, "lrclib.search") === 1 && count(env, "lrclib.getid") === 1)
+        const search = env.reqs.filter(function (r) { return r.kind === "lrclib.search" })[0]
+        assert.equal(search.path, "/api/v2/search?track_name=Placeholder%20Title&artist_name=Placeholder%20Artist")
+        assert.equal(s.alternates.length, 4)
+        assert.equal(s.alternates[0].provider, "lrclib")
+    } },
+    { name: "v2 search unavailable -> v1 search, full record used without another request", fn: () => {
+        const env = world({ "lrclib.search": { status: 404, headers: {}, body: "" }, "lrclib.search1": fxr("lrclib-v1-search") }, { providers: ["lrclib"] })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "synced")
+        assert.equal(count(env, "lrclib.search1"), 1)
+        assert.equal(count(env, "lrclib.getid"), 0)
+        assert.equal(s.source.matchedBy, "search")
+    } },
+    { name: "v2 search with an unexpected shape also falls back to v1", fn: () => {
+        const env = world({ "lrclib.search": { status: 200, headers: {}, body: '{"hits":[]}' }, "lrclib.search1": fxr("lrclib-v1-search") }, { providers: ["lrclib"] })
+        assert.equal(lookup(env, TRACK).status, "synced")
+        assert.equal(count(env, "lrclib.search1"), 1)
+    } },
+    { name: "Unison found: word sync with both credits and the ETag cached", fn: () => {
+        const env = world({ "unison.lookup": fxr("unison-lyrics-v") }, { providers: ["unison"] })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "synced")
+        assert.equal(s.lyrics.sync, "word")
+        assert.equal(s.source.provider, "unison")
+        assert.equal(s.source.credits.length, 2)
+        assert.equal(env.cache.rows[s.trackKey].etag, 'W/"13529-Sml3_yqMrprenjk14U_Vw1AuXsM"')
+    } },
+    { name: "requests carry the identifying headers; nothing else about the machine", fn: () => {
+        const env = world({ "lrclib.search": fxr("lrclib-v2-search") }, {}, null)
+        lookup(env, track({ artUrl: "file:///home/someone/.cache/cover.png", identity: "Some Player" }))
+        assert.ok(env.reqs.length >= 3)
+        for (let i = 0; i < env.reqs.length; i++) {
+            const r = env.reqs[i]
+            assert.equal(r.headers["User-Agent"], USER_AGENT)
+            if (r.provider === "lrclib") assert.equal(r.headers["Lrclib-Client"], USER_AGENT)
+            assert.equal(r.url.indexOf("someone"), -1)
+            assert.equal(r.url.indexOf("Some%20Player"), -1)
+            assert.ok(r.url.indexOf("https://lrclib.net/") === 0 || r.url.indexOf("https://unison.betterlyrics.org/") === 0)
+        }
+    } },
+    { name: "a YouTube video id from the cover URL goes to Unison only", fn: () => {
+        const env = world({})
+        lookup(env, track({ artUrl: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hq.jpg" }))
+        const u = env.reqs.filter(function (r) { return r.kind === "unison.lookup" })[0]
+        assert.ok(u.url.indexOf("v=dQw4w9WgXcQ&") > 0)
+        const l = env.reqs.filter(function (r) { return r.kind === "lrclib.get" })[0]
+        assert.equal(l.url.indexOf("dQw4w9WgXcQ"), -1)
+    } },
+    { name: "dev base URL replaces both hosts", fn: () => {
+        const env = world({}, { devBaseUrl: "http://127.0.0.1:47800" })
+        lookup(env, TRACK)
+        assert.ok(env.reqs.length >= 2)
+        for (let i = 0; i < env.reqs.length; i++) assert.equal(env.reqs[i].url.indexOf("http://127.0.0.1:47800/"), 0)
+    } },
+
+    // --- progressive display ---
+    { name: "progressive: LRCLIB line first, Unison word within 2500 ms swaps", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line", { delay: 20 }), "unison.lookup": fxr("unison-lyrics-v", { delay: 300 }) })
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS + 100)
+        assert.equal(env.resolver.state().source.provider, "lrclib")
+        assert.equal(env.resolver.state().lyrics.sync, "line")
+        env.advance(400)
+        const s = env.resolver.state()
+        assert.equal(s.source.provider, "unison")
+        assert.equal(s.lyrics.sync, "word")
+        // the replaced version is offered as an alternate
+        assert.deepEqual(s.alternates, [{ provider: "lrclib", id: "3396226" }])
+        assert.equal(env.cache.rows[s.trackKey].provider, "unison")
+    } },
+    { name: "progressive: plain first, line later within the window swaps", fn: () => {
+        const env = world({ "lrclib.get": withDuration(fxr("lrclib-get-id-plainonly", { delay: 20 }), 233), "unison.lookup": fxr("unison-id-lrc-linesync", { delay: 800 }) })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "synced")
+        assert.equal(s.source.provider, "unison")
+        assert.deepEqual(statuses(env).filter(function (x) { return x !== "idle" && x !== "loading" }), ["plain", "synced", "synced"])
+    } },
+    { name: "progressive: a better tier after 2500 ms does not swap mid-song, but is cached", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line", { delay: 20 }), "unison.lookup": fxr("unison-lyrics-v", { delay: 3000 }) })
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS + 3500)
+        const s = env.resolver.state()
+        assert.equal(s.source.provider, "lrclib")
+        assert.equal(s.lyrics.sync, "line")
+        const row = env.cache.rows[s.trackKey]
+        assert.equal(row.provider, "unison", "ranking still caches the best version")
+        assert.deepEqual(s.alternates, [{ provider: "unison", id: "13529" }])
+    } },
+    { name: "progressive: equal or lower tiers never swap", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line", { delay: 20 }), "unison.lookup": fxr("unison-id-lrc-linesync", { delay: 100 }) })
+        const s = lookup(env, TRACK)
+        assert.equal(s.source.provider, "lrclib")
+        const env2 = world({ "lrclib.get": fxr("lrclib-get-line", { delay: 20 }), "unison.lookup": fxr("unison-id-plain-plain", { delay: 100 }) })
+        assert.equal(lookup(env2, TRACK).source.provider, "lrclib")
+    } },
+    { name: "instrumental from LRCLIB wins only when no provider has synced lyrics", fn: () => {
+        const instr = { "lrclib.get": withDuration(fxr("lrclib-get-id-instrumental"), 233) }
+        const a = world(Object.assign({}, instr, { "unison.lookup": fxr("unison-id-plain-plain", { delay: 100 }) }))
+        const sa = lookup(a, TRACK)
+        assert.equal(sa.status, "instrumental")
+        assert.equal(a.cache.rows[sa.trackKey].provider, "lrclib")
+        const b = world(Object.assign({}, instr, { "unison.lookup": fxr("unison-id-lrc-linesync", { delay: 100 }) }))
+        const sb = lookup(b, TRACK)
+        assert.equal(sb.status, "synced")
+        assert.equal(sb.source.provider, "unison")
+    } },
+    { name: "only one provider: the other is never contacted", fn: () => {
+        const a = world({ "lrclib.get": fxr("lrclib-get-line") }, { providers: "lrclib" })
+        assert.equal(lookup(a, TRACK).status, "synced")
+        assert.equal(ofProvider(a, "unison").length, 0)
+        const b = world({ "unison.lookup": fxr("unison-lyrics-v") }, { providers: ["unison"] })
+        assert.equal(lookup(b, TRACK).status, "synced")
+        assert.equal(ofProvider(b, "lrclib").length, 0)
+        const c = world({}, { providers: [] })
+        const sc = lookup(c, TRACK)
+        assert.equal(sc.status, "skipped")
+        assert.equal(sc.skipReason, "no-providers")
+        assert.equal(c.reqs.length, 0)
+    } },
+
+    // --- duration safety ---
+    { name: "a get result more than 10 s off the known duration is never shown", fn: () => {
+        // fixture record is 233 s; the track is 250 s long. v2 candidates are 233/239/283... too.
+        const env = world({ "lrclib.get": fxr("lrclib-get-line"), "lrclib.search": fxr("lrclib-v2-search") }, { providers: ["lrclib"] })
+        const s = lookup(env, track({ lengthUs: 250e6 }))
+        assert.equal(s.status, "notfound")
+        assert.equal(s.lyrics, null)
+        for (let i = 0; i < env.states.length; i++) assert.equal(env.states[i].lyrics, null)
+        assert.equal(count(env, "lrclib.getid"), 0, "no candidate was fetched")
+    } },
+    { name: "candidates 7 s off are accepted, 11 s off are not", fn: () => {
+        const mk = function () {
+            return { "lrclib.search": fxr("lrclib-v2-search"), "lrclib.getid": function (r) { return withId(fxr("lrclib-get-line"), r.path.split("/").pop()) } }
+        }
+        const near = world(mk(), { providers: ["lrclib"] })
+        // track 240 s: candidates at 239 (1 s) are accepted; the 233 ones are 7 s off (acceptable but ranked lower)
+        assert.equal(lookup(near, track({ lengthUs: 240e6 })).status, "synced")
+        const far = world(mk(), { providers: ["lrclib"] })
+        // track 258 s: nearest candidate is 272 (14 s) / 235 (23 s): all more than 10 s off
+        const sf = lookup(far, track({ lengthUs: 258e6 }))
+        assert.equal(sf.status, "notfound")
+        assert.equal(count(far, "lrclib.getid"), 0)
+    } },
+    { name: "get/{id} answer that contradicts the known duration is discarded", fn: () => {
+        const env = world({
+            "lrclib.search": fxr("lrclib-v2-search"),
+            // claims id 7621759 but the record says 304 s while the track is 233 s
+            "lrclib.getid": fxr("lrclib-get-id-word"),
+        }, { providers: ["lrclib"] })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "notfound")
+        for (let i = 0; i < env.states.length; i++) assert.equal(env.states[i].lyrics, null)
+    } },
+    { name: "unknown track duration: candidates are allowed (ranked lower)", fn: () => {
+        const env = world({ "lrclib.search": fxr("lrclib-v2-search"), "lrclib.getid": function (r) { return withId(fxr("lrclib-get-line"), r.path.split("/").pop()) } }, { providers: ["lrclib"] })
+        const s = lookup(env, track({ lengthUs: 0 }))
+        assert.equal(s.status, "synced")
+        assert.equal(env.reqs[0].url.indexOf("duration"), -1)
+    } },
+
+    // --- negative cache, errors, rate limits ---
+    { name: "notfound is cached for 6 h", fn: () => {
+        const env = world({})
+        let s = lookup(env, TRACK)
+        assert.equal(s.status, "notfound")
+        assert.equal(env.cache.rows[s.trackKey].status, "notfound")
+        const n = env.reqs.length
+        env.resolver.setTrack(OTHER_SKIPPED)
+        env.advance(DEBOUNCE_MS + 10)
+        assert.equal(env.resolver.state().status, "skipped")
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS + 10)
+        assert.equal(env.reqs.length, n, "served from the negative cache")
+        assert.equal(env.resolver.state().status, "notfound")
+        // after the TTL the lookup is repeated
+        env.advance(NOTFOUND_TTL_MS)
+        env.resolver.setTrack(OTHER_SKIPPED)
+        env.advance(DEBOUNCE_MS + 10)
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS + 10)
+        assert.ok(env.reqs.length > n, "negative entry expired")
+    } },
+    { name: "refetch and retry bypass the negative cache", fn: () => {
+        const env = world({})
+        lookup(env, TRACK)
+        const n = count(env, "lrclib.get")
+        env.resolver.refetch()
+        env.advance(100)
+        assert.equal(count(env, "lrclib.get"), n + 1)
+        env.resolver.retry()
+        env.advance(100)
+        assert.equal(count(env, "lrclib.get"), n + 2)
+    } },
+    { name: "both providers failing -> error, not cached", fn: () => {
+        const boom = { status: 500, headers: {}, body: "<html>Internal Server Error</html>" }
+        const env = world({ "lrclib.get": boom, "unison.lookup": { status: 502, headers: {}, body: "" } })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "error")
+        assert.equal(s.error.provider, "lrclib")
+        assert.equal(s.error.status, 500)
+        assert.equal(s.error.message, "Internal Server Error")
+        assert.equal(env.cache.rows[s.trackKey], undefined)
+    } },
+    { name: "network errors (no response) count as errors", fn: () => {
+        const env = makeEnv()
+        env.cache = makeCache()
+        env.http = { request: function (spec, cb) {
+            env.reqs.push({ url: spec.url })
+            env.schedule(10, function () { cb(new Error("connection refused"), null) })
+            return { abort: function () {} }
+        } }
+        env.resolver = createResolver({ http: env.http, cache: env.cache, now: env.now, schedule: env.schedule, random: env.random, onUpdate: env.onUpdate })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "error")
+        assert.equal(s.error.message, "connection refused")
+        assert.equal(s.error.status, 0)
+    } },
+    { name: "one provider failing and the other not found: notfound, not cached", fn: () => {
+        const env = world({ "lrclib.get": { status: 500, headers: {}, body: "" } })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "notfound")
+        assert.equal(env.cache.rows[s.trackKey], undefined)
+    } },
+    { name: "one provider failing, the other found: shown, cached short-lived", fn: () => {
+        const env = world({ "lrclib.get": { status: 500, headers: {}, body: "" }, "unison.lookup": fxr("unison-id-lrc-linesync") })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "synced")
+        const row = env.cache.rows[s.trackKey]
+        assert.ok(row.fetchedAt + FOUND_TTL_MS - env.now() <= 3600 * 1000 + 6000, "incomplete lookups expire within about an hour")
+    } },
+    { name: "429 Retry-After 5: ratelimited, no request to that provider for 5 s, then auto-retry", fn: () => {
+        let calls = 0
+        const env = world({
+            "lrclib.get": function () { calls++; return calls === 1 ? RL(5) : fxr("lrclib-get-line") },
+        })
+        env.rand = 0.5
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS + 100)
+        const s = env.resolver.state()
+        assert.equal(s.status, "ratelimited")
+        assert.equal(s.retryInS, 6, "5 s x (1 + 0.5 x 0.3) = 5.75 s")
+        assert.equal(s.lyrics, null)
+        const t0 = env.reqs[0].t
+        env.advance(4500)
+        assert.equal(count(env, "lrclib.get"), 1, "no request during the cooldown")
+        env.resolver.retry() // manual retry during the cooldown must not hit the provider either
+        env.advance(500)
+        assert.equal(count(env, "lrclib.get"), 1)
+        env.advance(1000)
+        assert.equal(count(env, "lrclib.get"), 2)
+        const second = env.reqs.filter(function (r) { return r.kind === "lrclib.get" })[1]
+        assert.ok(second.t - t0 >= 5000, "second request at least 5 s after the first")
+        assert.equal(env.resolver.state().status, "synced")
+    } },
+    { name: "429 on one provider while the other has lyrics: lyrics shown, no ratelimited status", fn: () => {
+        const env = world({ "lrclib.get": RL(30), "unison.lookup": fxr("unison-id-lrc-linesync") })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "synced")
+        assert.equal(s.source.provider, "unison")
+        // the next track within the cooldown does not contact LRCLIB
+        const n = count(env, "lrclib.get")
+        env.resolver.setTrack(track({ title: "Another One" }))
+        env.advance(DEBOUNCE_MS + 100)
+        assert.equal(count(env, "lrclib.get"), n)
+    } },
+    { name: "503 behaves like 429; repeated 429 keeps backing off (bounded auto-retries)", fn: () => {
+        const env = world({ "lrclib.get": { status: 503, headers: { "retry-after": "2" }, body: "" } }, { providers: ["lrclib"] })
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS + 100)
+        assert.equal(env.resolver.state().status, "ratelimited")
+        env.advance(60 * 1000)
+        const n = count(env, "lrclib.get")
+        assert.ok(n >= 2 && n <= 6, "automatic retries are bounded, got " + n)
+        env.advance(10 * 60 * 1000)
+        assert.equal(count(env, "lrclib.get"), n)
+        assert.equal(env.resolver.state().status, "ratelimited")
+    } },
+    { name: "LOOKUP_PENDING: retried honouring Retry-After, at most 3 retries", fn: () => {
+        let calls = 0
+        const pending = { status: 503, headers: { "retry-after": "1" }, body: '{"success":false,"error":"pending","code":"LOOKUP_PENDING"}' }
+        const env = world({ "unison.lookup": function () { calls++; return calls <= 2 ? pending : fxr("unison-id-lrc-linesync") } }, { providers: ["unison"] })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "synced")
+        assert.equal(count(env, "unison.lookup"), 3)
+        const u = env.reqs
+        assert.ok(u[1].t - u[0].t >= 1000 && u[2].t - u[1].t >= 1000)
+        const env2 = world({ "unison.lookup": pending }, { providers: ["unison"] })
+        const s2 = lookup(env2, TRACK, 20000)
+        assert.equal(count(env2, "unison.lookup"), 4, "1 try + 3 retries")
+        assert.equal(s2.status, "error")
+        assert.equal(env2.cache.rows[s2.trackKey], undefined)
+    } },
+
+    // --- skip rules ---
+    { name: "skip: too short, too long, excluded player, empty title/artist send nothing", fn: () => {
+        const env = world({}, { excludedPlayers: "mpv, Some Player" })
+        const cases2 = [
+            [track({ lengthUs: 10e6 }), "too-short"],
+            [track({ lengthUs: 1000e6 }), "too-long"],
+            [track({ identity: "some player" }), "excluded-player"],
+            [track({ title: "" }), "no-title"],
+            [track({ artist: "" }), "no-artist"],
+            [track({ title: "/home/someone/music/x.flac" }), "no-title"],
+        ]
+        for (let i = 0; i < cases2.length; i++) {
+            const s = lookup(env, cases2[i][0], 100)
+            assert.equal(s.status, "skipped", String(i))
+            assert.equal(s.skipReason, cases2[i][1], String(i))
+        }
+        assert.equal(env.reqs.length, 0)
+    } },
+    { name: "skip: lookUpAnyway overrides length and player rules, not an empty title", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line") }, { minTrackS: 600 })
+        const s = lookup(env, TRACK)
+        assert.equal(s.skipReason, "too-short")
+        env.resolver.lookUpAnyway()
+        env.advance(200)
+        assert.equal(env.resolver.state().status, "synced")
+        const e2 = world({})
+        lookup(e2, track({ title: "" }))
+        e2.resolver.lookUpAnyway()
+        e2.advance(200)
+        assert.equal(e2.resolver.state().skipReason, "no-title")
+        assert.equal(e2.reqs.length, 0)
+    } },
+    { name: "disabled in config: skipped, nothing sent; enabling starts the lookup", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line") }, { enabled: false })
+        const s = lookup(env, TRACK, 100)
+        assert.equal(s.status, "skipped")
+        assert.equal(s.skipReason, "disabled")
+        assert.equal(env.reqs.length, 0)
+        env.resolver.setConfig({ enabled: true })
+        env.advance(200)
+        assert.equal(env.resolver.state().status, "synced")
+    } },
+    { name: "hideForTrack persists, skips, and lookUpAnyway undoes it", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line") })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "synced")
+        env.resolver.hideForTrack()
+        let h = env.resolver.state()
+        assert.equal(h.status, "skipped")
+        assert.equal(h.skipReason, "track-disabled")
+        assert.equal(h.lyrics, null)
+        assert.equal(env.cache.prefs[s.trackKey].lyricsDisabled, true)
+        env.resolver.setTrack(OTHER_SKIPPED)
+        env.advance(DEBOUNCE_MS + 10)
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS + 10)
+        assert.equal(env.resolver.state().skipReason, "track-disabled")
+        env.resolver.lookUpAnyway()
+        env.advance(200)
+        assert.equal(env.resolver.state().status, "synced")
+        assert.equal(env.cache.prefs[s.trackKey].lyricsDisabled, false)
+    } },
+    { name: "setTrack(null) goes idle and cancels the lookup", fn: () => {
+        const env = world({ "lrclib.get": function () { return null } })
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS + 10)
+        env.resolver.setTrack(null)
+        assert.equal(env.resolver.state().status, "idle")
+        assert.ok(env.reqs[0].aborted)
+        assert.equal(env.resolver.state().trackKey, null)
+    } },
+
+    // --- offsets, alternates, pins ---
+    { name: "setTrackOffset clamps, persists, and comes back with the track", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line") })
+        const s = lookup(env, TRACK)
+        env.resolver.setTrackOffset(300)
+        assert.equal(env.resolver.state().offsetMs, 300)
+        assert.equal(env.cache.prefs[s.trackKey].offsetMs, 300)
+        env.resolver.setTrackOffset(99999)
+        assert.equal(env.resolver.state().offsetMs, 5000)
+        env.resolver.setTrackOffset(-99999)
+        assert.equal(env.resolver.state().offsetMs, -5000)
+        env.resolver.setTrackOffset(-200)
+        env.resolver.setTrack(OTHER_SKIPPED)
+        assert.equal(env.resolver.state().offsetMs, 0)
+        env.advance(DEBOUNCE_MS + 10)
+        env.resolver.setTrack(TRACK)
+        assert.equal(env.resolver.state().offsetMs, -200, "offset is known before the debounce ends")
+    } },
+    { name: "tryNextMatch: fetches an alternate, pins it, rotates alternates; the pin survives a restart", fn: () => {
+        const env = world({
+            "lrclib.search": fxr("lrclib-v2-search"),
+            "lrclib.getid": function (r) { return withId(fxr("lrclib-get-line"), r.path.split("/").pop()) },
+        }, { providers: ["lrclib"] })
+        const s = lookup(env, TRACK)
+        const first = s.source.id
+        const alts = s.alternates
+        assert.equal(alts.length, 4)
+        assert.equal(env.resolver.tryNextMatch(), true)
+        env.advance(100)
+        const n = env.resolver.state()
+        assert.equal(n.source.id, alts[0].id)
+        assert.ok(n.source.id !== first)
+        assert.equal(n.alternates.length, 4)
+        assert.equal(n.alternates[n.alternates.length - 1].id, first, "the previous version becomes the last alternate")
+        assert.equal(env.cache.prefs[s.trackKey].pinnedId, alts[0].id)
+        assert.equal(env.cache.prefs[s.trackKey].pinnedProvider, "lrclib")
+        assert.equal(env.cache.rows[s.trackKey].providerId, alts[0].id)
+        // next play: served from the cache, pinned version
+        const reqs = env.reqs.length
+        env.resolver.setTrack(OTHER_SKIPPED)
+        env.advance(DEBOUNCE_MS + 10)
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS + 10)
+        assert.equal(env.reqs.length, reqs)
+        assert.equal(env.resolver.state().source.id, alts[0].id)
+        // cache lost: the pinned id is fetched directly, no get / search
+        delete env.cache.rows[s.trackKey]
+        env.resolver.setTrack(OTHER_SKIPPED)
+        env.advance(DEBOUNCE_MS + 10)
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS + 100)
+        const last = env.reqs[env.reqs.length - 1]
+        assert.equal(last.kind, "lrclib.getid")
+        assert.equal(last.path, "/api/get/" + alts[0].id)
+        assert.equal(count(env, "lrclib.get"), 1, "only the very first lookup used get")
+        assert.equal(env.resolver.state().source.id, alts[0].id)
+    } },
+    { name: "tryNextMatch without alternates does nothing; an alternate off by > 10 s is skipped", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line") }, { providers: ["lrclib"] })
+        lookup(env, TRACK)
+        assert.equal(env.resolver.tryNextMatch(), false)
+        const env2 = world({ "lrclib.search": fxr("lrclib-v2-search"), "lrclib.getid": function (r) { return r.path.split("/").pop() === "7621759" ? withId(fxr("lrclib-get-line"), 7621759) : fxr("lrclib-get-id-word") } }, { providers: ["lrclib"] })
+        const s = lookup(env2, TRACK)
+        assert.equal(s.source.id, "7621759")
+        env2.resolver.tryNextMatch()
+        env2.advance(500)
+        assert.equal(env2.resolver.state().source.id, "7621759", "304 s records are never displayed for a 233 s track")
+        assert.ok(count(env2, "lrclib.getid") >= 2)
+    } },
+
+    // --- cache behaviour ---
+    { name: "fresh found row: no requests, touched", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line") })
+        const s = lookup(env, TRACK)
+        const n = env.reqs.length
+        env.resolver.setTrack(OTHER_SKIPPED)
+        env.advance(DEBOUNCE_MS + 10)
+        env.advance(1000)
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS + 10)
+        assert.equal(env.reqs.length, n)
+        const t = env.resolver.state()
+        assert.equal(t.status, "synced")
+        assert.equal(t.lyrics.sync, "line")
+        assert.ok(env.cache.rows[s.trackKey].lastUsedAt > env.cache.rows[s.trackKey].fetchedAt)
+    } },
+    { name: "schema version mismatch is a miss", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line") })
+        const s = lookup(env, TRACK)
+        env.cache.rows[s.trackKey].schemaV = CACHE_SCHEMA_V - 1
+        const n = env.reqs.length
+        env.resolver.setTrack(OTHER_SKIPPED)
+        env.advance(DEBOUNCE_MS + 10)
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS + 100)
+        assert.ok(env.reqs.length > n)
+        assert.equal(env.cache.rows[s.trackKey].schemaV, CACHE_SCHEMA_V)
+    } },
+    { name: "refetch bypasses a fresh found row", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line") })
+        lookup(env, TRACK)
+        const n = count(env, "lrclib.get")
+        env.resolver.refetch()
+        env.advance(200)
+        assert.equal(count(env, "lrclib.get"), n + 1)
+        assert.equal(env.resolver.state().status, "synced")
+    } },
+    { name: "stale found row (30 days): shown at once, revalidated; Unison sends If-None-Match and 304 refreshes", fn: () => {
+        const env = world({ "unison.lookup": fxr("unison-lyrics-v") })
+        const s = lookup(env, TRACK)
+        assert.equal(s.source.provider, "unison")
+        const etag = env.cache.rows[s.trackKey].etag
+        assert.ok(etag)
+        env.advance(FOUND_TTL_MS + 1000)
+        env.resolver.setTrack(OTHER_SKIPPED)
+        env.advance(DEBOUNCE_MS + 10)
+        env.route = router({ "unison.lookup": fxr("unison-lyrics-304") })
+        const n = env.states.length
+        env.resolver.setTrack(TRACK)
+        env.advance(DEBOUNCE_MS)
+        const shown = env.resolver.state()
+        assert.equal(shown.status, "synced", "cached lyrics shown while revalidating")
+        assert.equal(shown.lyrics.sync, "word")
+        env.advance(500)
+        const u = env.reqs[env.reqs.length - 2]
+        const reqs = env.reqs.filter(function (r) { return r.kind === "unison.lookup" })
+        assert.equal(reqs[reqs.length - 1].headers["If-None-Match"], etag)
+        assert.ok(u)
+        const row = env.cache.rows[s.trackKey]
+        assert.ok(env.now() - row.fetchedAt < 2000, "fetchedAt refreshed by the 304")
+        assert.equal(row.provider, "unison")
+        const after = env.states.slice(n).map(function (x) { return x.status })
+        assert.ok(after.indexOf("loading") < 0, "no loading flash during revalidation")
+        assert.equal(env.resolver.state().lyrics.sync, "word")
+    } },
+    { name: "cache disabled in config: the cache object is never touched; prefs live in memory", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line") }, { cacheEnabled: false })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "synced")
+        env.resolver.setTrackOffset(250)
+        assert.equal(env.cache.calls.length, 0)
+        const n = env.reqs.length
+        env.resolver.setTrack(OTHER_SKIPPED)
+        env.advance(DEBOUNCE_MS + 10)
+        env.resolver.setTrack(TRACK)
+        assert.equal(env.resolver.state().offsetMs, 250)
+        env.advance(DEBOUNCE_MS + 100)
+        assert.ok(env.reqs.length > n, "no cache: looked up again")
+    } },
+    { name: "null cache works end to end (found, notfound, offset, hide, tryNextMatch)", fn: () => {
+        const env = world({
+            "lrclib.search": fxr("lrclib-v2-search"),
+            "lrclib.getid": function (r) { return withId(fxr("lrclib-get-line"), r.path.split("/").pop()) },
+        }, { providers: ["lrclib"] }, { noCache: true })
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "synced")
+        env.resolver.setTrackOffset(100)
+        assert.equal(env.resolver.state().offsetMs, 100)
+        assert.equal(env.resolver.tryNextMatch(), true)
+        env.advance(100)
+        assert.ok(env.resolver.state().source.id !== s.source.id)
+        env.resolver.hideForTrack()
+        assert.equal(env.resolver.state().skipReason, "track-disabled")
+        const e2 = world({}, {}, { noCache: true })
+        assert.equal(lookup(e2, TRACK).status, "notfound")
+    } },
+    { name: "a throwing cache adapter never breaks the lookup", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line") })
+        env.cache.get = function () { throw new Error("db locked") }
+        env.cache.put = function () { throw new Error("db locked") }
+        env.cache.getPrefs = function () { throw new Error("db locked") }
+        const s = lookup(env, TRACK)
+        assert.equal(s.status, "synced")
+    } },
+    { name: "state carries trackInfo, generation increases per lookup, onUpdate fires on changes", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line") })
+        const s1 = lookup(env, TRACK)
+        assert.equal(s1.trackInfo.primaryArtist, "Placeholder Artist")
+        assert.equal(typeof s1.generation, "number")
+        env.resolver.setTrack(track({ title: "Second" }))
+        env.advance(DEBOUNCE_MS + 100)
+        assert.ok(env.resolver.state().generation > s1.generation)
+        assert.ok(env.states.length >= 4)
+    } },
+    { name: "setConfig with an unchanged config does not restart the lookup", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line") })
+        lookup(env, TRACK)
+        const n = env.reqs.length
+        env.resolver.setConfig({ enabled: true, providers: "lrclib,unison", minTrackS: 30, maxTrackS: 900, excludedPlayers: "", cacheEnabled: true })
+        env.advance(1000)
+        assert.equal(env.reqs.length, n)
+    } },
+]
