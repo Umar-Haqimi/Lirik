@@ -36,7 +36,7 @@ Done (2026-11-10):
 - Node: 79/79 pass. V4 (`tests/v4/host.qml`): 78/79 — see below.
 
 Still to do for M2:
-1. **V4 failure:** `fuzz › fuzz lyricsfile` fails under V4 only (Node passes). Not yet diagnosed — print
+1. **V4 failure:** one YAML fuzz case (`fuzz › fuzz yaml-lite` or `fuzz › fuzz lyricsfile`, varies run to run, so probably the 50 ms budget) fails under V4 only (Node passes). Not yet diagnosed — print
    the V4-FAIL message (`QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qml tests/v4/host.qml`);
    likely a throw/timeout in yaml-lite or lyricsfile under V4 (e.g. 50 ms budget or a V4 regex difference).
 2. Node-only differential tests in `tests/node/`: `lrc.mjs`/`ttml.mjs` vs `@braccato/parsers` on
