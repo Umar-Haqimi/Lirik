@@ -58,7 +58,7 @@ do_policy() {
         die "non-V4 construct in src/contents/code (see docs/DECISIONS.md D2)"
     fi
     # raw U+2028/U+2029/U+00A0/U+FEFF break V4 module loading; use \uXXXX escapes (docs/PROGRESS.md gotchas)
-    if grep -rnP '\x{2028}|\x{2029}|\x{00A0}|\x{FEFF}' src/contents/code tests/cases 2>/dev/null; then
+    if LC_ALL=C grep -rnE $'\xe2\x80\xa8|\xe2\x80\xa9|\xc2\xa0|\xef\xbb\xbf' src/contents/code tests/cases; then
         die "raw line/paragraph separator, NBSP or BOM in a .mjs file (use \\uXXXX escapes)"
     fi
     if grep -rnE '\{\s*\.\.\.' src/contents/code; then
