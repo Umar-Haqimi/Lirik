@@ -86,6 +86,9 @@ function Parser(src, maxDepth) {
     let text = String(src)
     if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
     this.lines = text.replace(/\r\n?/g, "\n").split("\n")
+    // The empty piece after the final line break is not a line (it would add a phantom blank line to a
+    // trailing `|+` / `>+` block scalar).
+    if (this.lines.length > 1 && this.lines[this.lines.length - 1] === "") this.lines.pop()
     this.maxDepth = maxDepth
     this.end = this.lines.length
 }
