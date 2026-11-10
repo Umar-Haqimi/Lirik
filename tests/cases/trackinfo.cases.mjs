@@ -103,3 +103,82 @@ for (let n = 0; n < SKIP_TABLE.length; n++) {
 cases.push({ name: "skipReason: missing cfg and prefs do not throw", fn: () => {
     assert.equal(skipReason(clean(meta()), undefined, undefined), null)
 } })
+
+// --- review fixes (M4a follow-up) ---------------------------------------------------
+
+function cl(o) {
+    return clean(meta(o))
+}
+
+cases.push({ name: "clean: channel VEVO without a space + 'Left - Right': the spaced left part is the artist", fn: () => {
+    const a = cl({ title: "Taylor Swift - Some Song", artist: "TaylorSwiftVEVO", identity: "Elisa" })
+    assert.equal(a.artist, "Taylor Swift")
+    assert.equal(a.title, "Some Song")
+    const b = cl({ title: "Beyonc\u00e9 - Some Song (Official Video)", artist: "beyonceVEVO", identity: "Firefox" })
+    assert.equal(b.artist, "Beyonc\u00e9")
+    assert.equal(b.titleAlt, "Some Song")
+    const c = cl({ title: "Other Name - Some Song", artist: "SomeVEVO", identity: "Firefox" })
+    assert.equal(c.artist, "Other Name", "no loose match: previous behaviour")
+    assert.equal(c.title, "Some Song")
+} })
+cases.push({ name: "clean: browser/channel sources are flagged noisy; plain tagged tracks are not", fn: () => {
+    assert.equal(cl({}).noisy, false)
+    assert.equal(cl({ identity: "Mozilla Firefox" }).noisy, true)
+    assert.equal(cl({ artist: "Chan - Topic" }).noisy, true)
+} })
+const FILES = [
+    ["01 - Some Artist - Some Song.flac", "", "Some Artist", "Some Song"],
+    ["03. Some Song.mp3", "Some Artist", "Some Artist", "Some Song"],
+    ["Some Song.OGG", "Some Artist", "Some Artist", "Some Song"],
+    ["02_Some Song.opus", "Some Artist", "Some Artist", "Some Song"],
+    ["Some Song.m4a", "Some Artist", "Some Artist", "Some Song"],
+    ["07) Some Artist - Some Song.wav", "", "Some Artist", "Some Song"],
+    ["1999", "Some Artist", "Some Artist", "1999"],
+    ["99 Problems", "Some Artist", "Some Artist", "99 Problems"],
+    ["Some Song.webm", "Some Artist", "Some Artist", "Some Song"],
+]
+for (let n = 0; n < FILES.length; n++) {
+    const f = FILES[n]
+    cases.push({ name: "clean: file-name title " + JSON.stringify(f[0]), fn: () => {
+        const i = cl({ title: f[0], artist: f[1] })
+        assert.equal(i.artist, f[2])
+        assert.equal(i.title, f[3])
+        assert.ok(!/\.(mp3|flac|ogg|opus|m4a|wav|aac|wma|webm|mkv|mp4)/i.test(i.title + i.titleAlt))
+    } })
+}
+const TAILS = [
+    ["Some Song - YouTube", "Some Song", "Some Song"],
+    ["Some Song | YouTube Music", "Some Song", "Some Song"],
+    ["Some Song | Official Video", "Some Song | Official Video", "Some Song"],
+    ["Some Song \u3010MV\u3011", "Some Song \u3010MV\u3011", "Some Song"],
+    ["\u300cSome Song\u300d Official MV", "\u300cSome Song\u300d Official MV", "Some Song"],
+    ["Some Song (Official Audio) [HD]", "Some Song (Official Audio) [HD]", "Some Song"],
+    ["Some Song (4K Visualizer)", "Some Song (4K Visualizer)", "Some Song"],
+]
+for (let n = 0; n < TAILS.length; n++) {
+    const t = TAILS[n]
+    cases.push({ name: "clean: browser title tail " + JSON.stringify(t[0]), fn: () => {
+        const i = cl({ title: t[0], identity: "Firefox" })
+        assert.equal(i.title, t[1])
+        assert.equal(i.titleAlt, t[2])
+    } })
+}
+cases.push({ name: "clean: Artist - Title (Official Audio) - YouTube", fn: () => {
+    const i = cl({ title: "Some Band - Some Song (Official Audio) - YouTube", artist: "", identity: "Firefox" })
+    assert.equal(i.artist, "Some Band")
+    assert.equal(i.titleAlt, "Some Song")
+} })
+cases.push({ name: "clean: hostile 300 KB strings are capped and fast", fn: () => {
+    const big = new Array(100001).join("(ab ")
+    const t0 = Date.now()
+    let i = cl({ title: big, artist: big, album: big })
+    let dt = Date.now() - t0
+    if (dt > 50) {
+        const t1 = Date.now()
+        i = cl({ title: big, artist: big, album: big })
+        dt = Date.now() - t1
+    }
+    assert.ok(i.title.length <= 300 && i.artist.length <= 300 && i.album.length <= 300)
+    assert.ok(i.artists.length <= 8)
+    assert.ok(dt <= 50, "took " + dt + " ms")
+} })

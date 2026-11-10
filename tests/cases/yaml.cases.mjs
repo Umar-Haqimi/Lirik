@@ -86,4 +86,11 @@ export const cases = [
         const junk = ["", ":", "- - -", "a:\n  - b\n c", "{", "]", "'", "\"\\", "a: |\n", "? x", "a: >9\n x"]
         for (let i = 0; i < junk.length; i++) assert.ok(typeof parseYaml(junk[i]).ok === "boolean", JSON.stringify(junk[i]))
     } },
+    { name: "keep-chomped block scalar: final whitespace-only line without a newline is not a line", fn: () => {
+        assert.deepEqual(y("a: |+\n  x\n  "), { a: "x\n" })
+        assert.deepEqual(y("a: |+\n  x\n  \n"), { a: "x\n\n" })
+        assert.deepEqual(y("a: |+\n  x\n\n  "), { a: "x\n\n" })
+        assert.deepEqual(y("a: |+\n  x\n   "), { a: "x\n \n" })
+        assert.deepEqual(y("a: >+\n  x\n  "), { a: "x\n" })
+    } },
 ]

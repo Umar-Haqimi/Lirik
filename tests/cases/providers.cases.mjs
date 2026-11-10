@@ -2,6 +2,7 @@ import { assert } from "./assert.mjs"
 import { fixture } from "../fixtures/fixtures.gen.mjs"
 import { USER_AGENT, LRCLIB_BASE, UNISON_BASE, MAX_BODY_BYTES } from "../../src/contents/code/constants.mjs"
 import { clean } from "../../src/contents/code/trackinfo.mjs"
+import { acceptCandidate } from "../../src/contents/code/match.mjs"
 import * as lr from "../../src/contents/code/providers/lrclib.mjs"
 import * as un from "../../src/contents/code/providers/unison.mjs"
 
@@ -197,7 +198,7 @@ export const cases = [
     // --- Unison builders ---
     { name: "unison buildLookup: v + song + artist + album + duration", fn: () => {
         const r = un.buildLookup(info({ title: "Song (Live)", artist: "One, Two", album: "Al bum", lengthUs: 249.6e6, artUrl: "https://i.ytimg.com/vi/dQw4w9WgXcQ/x.jpg" }))
-        assert.equal(r.url, "https://unison.betterlyrics.org/lyrics?v=dQw4w9WgXcQ&song=Song&artist=One&album=Al%20bum&duration=250")
+        assert.equal(r.url, "https://unison.betterlyrics.org/lyrics?v=dQw4w9WgXcQ&song=Song&artist=One%2C%20Two&album=Al%20bum&duration=250")
         assert.equal(r.headers["User-Agent"], USER_AGENT)
         assert.equal(r.headers["If-None-Match"], undefined)
     } },
@@ -245,7 +246,7 @@ export const cases = [
         const m = unLookup("unison-lyrics-v", { usedVideoId: true })
         assert.equal(m.kind, "found")
         assert.equal(m.etag, 'W/"13529-Sml3_yqMrprenjk14U_Vw1AuXsM"')
-        assert.equal(m.matchedBy, "id")
+        assert.equal(m.matchedBy, "signature", "no matchedBy in the response: never claim an exact-id match")
         assert.equal(unLookup("unison-lyrics-v", { matchedBy: "search" }).matchedBy, "search")
     } },
     { name: "unison 304 -> notmodified with the etag", fn: () => {
@@ -315,7 +316,7 @@ export const cases = [
         assert.equal(un.mapLookup(200, {}, unisonBody({ matchedBy: "isrc" }), {}).matchedBy, "id")
         assert.equal(un.mapLookup(200, {}, unisonBody({ matchedBy: "video" }), {}).matchedBy, "id")
         assert.equal(un.mapLookup(200, {}, unisonBody({ matchedBy: "song_artist" }), {}).matchedBy, "signature")
-        assert.equal(un.mapLookup(200, {}, unisonBody({}), { usedVideoId: true }).matchedBy, "id")
+        assert.equal(un.mapLookup(200, {}, unisonBody({}), { usedVideoId: true }).matchedBy, "signature")
     } },
     { name: "unison: body over the cap is an error; hostile input never throws", fn: () => {
         assert.equal(un.mapLookup(200, {}, new Array(MAX_BODY_BYTES + 2).join("x"), {}).kind, "error")
@@ -327,3 +328,61 @@ export const cases = [
         assert.equal(UNISON_BASE, "https://unison.betterlyrics.org")
     } },
 ]
+
+// --- review fixes (M4a follow-up) ---------------------------------------------------
+
+cases.push({ name: "lrclib: browser / channel sources use the stripped title for get as well", fn: () => {
+    const noisy = info({ title: "Song (Official Video)", identity: "Mozilla Firefox" })
+    assert.ok(lr.buildGet(noisy).url.indexOf("track_name=Song&") > 0)
+    const tagged = info({ title: "Song (Official Video)", identity: "Elisa" })
+    assert.ok(lr.buildGet(tagged).url.indexOf("track_name=Song%20(Official%20Video)&") > 0)
+} })
+cases.push({ name: "lrclib v2: entries without the has* flags are an unexpected shape", fn: () => {
+    const body = JSON.stringify([{ id: 1, trackName: "x", artistName: "y", duration: 200 }])
+    assert.equal(lr.mapSearch(200, {}, body, 2).shape, true)
+    const mixed = JSON.stringify([{ id: 1, trackName: "x", artistName: "y", hasSyncedLyrics: true, hasPlainLyrics: true }, { id: 2 }])
+    assert.equal(lr.mapSearch(200, {}, mixed, 2).shape, true)
+    assert.equal(lr.mapSearch(200, {}, body, 1).kind, "candidates", "v1 summaries are full records and lenient")
+} })
+cases.push({ name: "lrclib: candidate list and strings are capped", fn: () => {
+    const list = []
+    for (let i = 0; i < 100; i++) list.push({ id: i, trackName: new Array(2001).join("t"), artistName: new Array(2001).join("a"), albumName: "x", duration: 200, hasSyncedLyrics: true, hasPlainLyrics: true, hasLyricsfile: true, instrumental: false, hasWordSync: false })
+    const m = lr.mapSearch(200, {}, JSON.stringify(list), 2)
+    assert.equal(m.kind, "candidates")
+    assert.equal(m.list.length, 20)
+    assert.ok(m.list[0].title.length <= 300 && m.list[0].artist.length <= 300)
+} })
+cases.push({ name: "hostile candidate list maps and ranks in under 50 ms", fn: () => {
+    const q0 = info({ title: "Some Fairly Long Title", artist: "Artist One, Artist Two & Artist Three" })
+    const huge = new Array(25001).join("ab, ")
+    const bigTitle = new Array(25001).join("ab ")
+    const list = []
+    for (let i = 0; i < 30; i++) list.push({ id: i, trackName: i < 3 ? bigTitle : "Some Fairly Long Title", artistName: i < 3 ? huge : "Artist One", albumName: i < 3 ? bigTitle : "x", duration: 200, hasSyncedLyrics: true, hasPlainLyrics: true, hasLyricsfile: true, instrumental: false, hasWordSync: false })
+    const body = JSON.stringify(list)
+    function run() {
+        const m = lr.mapSearch(200, {}, body, 2)
+        let n = 0
+        for (let i = 0; i < m.list.length; i++) {
+            const c = m.list[i]
+            if (acceptCandidate(q0, { title: c.title, artist: c.artist, duration: c.duration }).ok) n++
+        }
+        return n
+    }
+    let t0 = Date.now()
+    run()
+    let dt = Date.now() - t0
+    if (dt > 50) {
+        t0 = Date.now()
+        run()
+        dt = Date.now() - t0
+    }
+    assert.ok(dt <= 50, "took " + dt + " ms")
+} })
+cases.push({ name: "unison: the full cleaned artist string is sent", fn: () => {
+    const r = un.buildLookup(info({ artist: "Alpha, Beta" }))
+    assert.ok(r.url.indexOf("artist=Alpha%2C%20Beta") > 0)
+} })
+cases.push({ name: "unison: matchedBy comes from the response only", fn: () => {
+    assert.equal(un.mapLookup(200, {}, unisonBody({}), { usedVideoId: true }).matchedBy, "signature")
+    assert.equal(un.mapLookup(200, {}, unisonBody({ matchedBy: "videoId" }), {}).matchedBy, "id")
+} })

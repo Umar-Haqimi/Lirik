@@ -4,7 +4,7 @@
 
 import {
     MATCH_TITLE_MIN, MATCH_ARTIST_MIN, MATCH_MAX_DURATION_DIFF_S, MATCH_DURATION_SCORES,
-    DURATION_UNKNOWN_SCORE, MATCH_CONTAINMENT_SCORE,
+    DURATION_UNKNOWN_SCORE, MATCH_CONTAINMENT_SCORE, MAX_META_CHARS, MAX_ARTISTS, RANK_UNKNOWN_DURATION_PENALTY,
     RANK_TIER, RANK_MATCH, RANK_PROVIDER_FIRST, RANK_CONFIDENCE, RANK_INSTRUMENTAL,
 } from "./constants.mjs"
 import { stableSort } from "./model.mjs"
@@ -12,9 +12,11 @@ import { stableSort } from "./model.mjs"
 // --- Text normalization -----------------------------------------------------
 
 const APOSTROPHES = /['\u2018\u2019\u201b\u02bc`\u00b4]/g
-// Punctuation and symbols (explicit ranges; V4 has no Unicode property escapes). Surrogates cover emoji.
-const PUNCT = /[\u0000-/:-@[-`{-\u00bf\u00d7\u00f7\u02c2-\u02c5\u02d2-\u02df\u2000-\u206f\u20a0-\u20cf\u2100-\u2bff\u2e00-\u2e7f\u3000-\u303f\ufe10-\ufe6f\ud800-\udfff\ufffd]/g
+// Punctuation and symbols (explicit ranges; V4 has no Unicode property escapes). Astral characters (surrogate pairs) are kept.
+const PUNCT = /[\u0000-/:-@[-`{-\u00bf\u00d7\u00f7\u02c2-\u02c5\u02d2-\u02df\u2000-\u206f\u20a0-\u20cf\u2100-\u2bff\u2e00-\u2e7f\u3000-\u3004\u3008-\u303f\ufe10-\ufe6f\ufffd]/g
 const COMBINING = /[\u0300-\u036f]/g
+// Letters with no decomposition: fold to their usual ASCII spelling ("Bjørk" ~ "Bjork").
+const FOLD = [["\u00f8", "o"], ["\u0111", "d"], ["\u00f0", "d"], ["\u0142", "l"], ["\u00e6", "ae"], ["\u0153", "oe"], ["\u00df", "ss"], ["\u00fe", "th"], ["\u0131", "i"]]
 
 /**
  * Normalized form used for comparison and cache keys: NFKC (full-width -> ASCII), lowercase,
@@ -28,7 +30,9 @@ export function normalizeText(s) {
     } catch (e) {
         // keep as is
     }
+    if (t.length > MAX_META_CHARS) t = t.slice(0, MAX_META_CHARS)
     t = t.toLowerCase()
+    for (let i = 0; i < FOLD.length; i++) t = t.split(FOLD[i][0]).join(FOLD[i][1])
     try {
         t = t.normalize("NFD")
     } catch (e) {
@@ -98,6 +102,9 @@ export function similarity(a, b) {
     const nb = normalizeText(b)
     if (na === "" || nb === "") return 0
     if (na === nb) return 1
+    const mn = Math.min(na.length, nb.length)
+    const mx = Math.max(na.length, nb.length)
+    if (mn / mx < 0.5) return 0 // distance >= length difference: ratio < 0.5, below every threshold
     const r1 = ratio(na, nb)
     const r2 = ratio(sortedTokens(na), sortedTokens(nb))
     return r1 > r2 ? r1 : r2
@@ -110,11 +117,12 @@ const ARTIST_SEP = /\s*(?:,|;|\s&\s|\s\u00d7\s|\sx\s|\s\/\s|\s(?:feat\.?|ft\.?|f
 
 /** Split an artist string into individual artist names (never empty strings). */
 export function splitArtists(s) {
-    const str = String(s === null || s === undefined ? "" : s).trim()
+    let str = String(s === null || s === undefined ? "" : s).trim()
     if (str === "") return []
+    if (str.length > MAX_META_CHARS * 2) str = str.slice(0, MAX_META_CHARS * 2)
     const parts = str.split(ARTIST_SEP)
     const out = []
-    for (let i = 0; i < parts.length; i++) {
+    for (let i = 0; i < parts.length && out.length < MAX_ARTISTS; i++) {
         const p = parts[i] === undefined ? "" : parts[i].trim()
         if (p !== "") out.push(p)
     }
@@ -153,8 +161,8 @@ function artistPairScore(a, b) {
  * or artist strings.
  */
 export function artistOverlap(qArtists, cArtists) {
-    const q = typeof qArtists === "string" ? splitArtists(qArtists) : (qArtists || [])
-    const c = typeof cArtists === "string" ? splitArtists(cArtists) : (cArtists || [])
+    const q = (typeof qArtists === "string" ? splitArtists(qArtists) : (qArtists || [])).slice(0, MAX_ARTISTS)
+    const c = (typeof cArtists === "string" ? splitArtists(cArtists) : (cArtists || [])).slice(0, MAX_ARTISTS)
     if (q.length === 0 || c.length === 0) return 0
     const whole = artistPairScore(q.join(" "), c.join(" "))
     let matched = 0
@@ -172,10 +180,12 @@ export function artistOverlap(qArtists, cArtists) {
 
 // --- Title decorations ------------------------------------------------------
 
-const DECOR_WORDS = "feat|ft|featuring|with|remaster|remastered|live|version|edit|mix|official|video|audio|lyrics|lyric|explicit|clean|mono|stereo|deluxe|bonus|visualizer|visualiser|hd|hq|4k"
+const DECOR_WORDS = "feat|ft|featuring|with|remaster|remastered|live|version|edit|mix|official|video|audio|lyrics|lyric|explicit|clean|mono|stereo|deluxe|bonus|visualizer|visualiser|hd|hq|4k|mv|pv|youtube"
 const DECOR_RE = new RegExp("(?:^|[^a-z0-9])(?:" + DECOR_WORDS + ")(?:[^a-z0-9]|$)", "i")
 const BRACKET_GROUP = /\s*(?:\([^()]*\)|\[[^\[\]]*\]|\u3010[^\u3010\u3011]*\u3011|\uff08[^\uff08\uff09]*\uff09)/g
 const DASH_TAIL = /\s+[-\u2013\u2014]\s+([^-\u2013\u2014]*)$/
+const CORNER = /^[\u300c\u300e](.+?)[\u300d\u300f]\s*(.*)$/
+const PIPE_TAIL = /\s+\|\s+[^|]*$/
 const FEAT_TAIL = /\s+(?:feat\.?|ft\.?|featuring)\s+.*$/i
 
 function isDecoration(text) {
@@ -200,8 +210,12 @@ export function isDecorationOnly(text) {
  * empty string: falls back to the input.
  */
 export function stripTitleDecorations(title) {
-    const orig = String(title === null || title === undefined ? "" : title).trim()
+    let orig = String(title === null || title === undefined ? "" : title).trim()
+    if (orig.length > MAX_META_CHARS) orig = orig.slice(0, MAX_META_CHARS)
     let t = orig
+    // 「Title」 Official MV: unwrap corner brackets when the rest is decoration.
+    const cm = CORNER.exec(t)
+    if (cm && cm[1].trim() !== "" && (cm[2].trim() === "" || isDecoration(cm[2]))) t = cm[1].trim()
     for (let guard = 0; guard < 8; guard++) {
         const before = t
         t = t.replace(BRACKET_GROUP, function (m) {
@@ -209,6 +223,8 @@ export function stripTitleDecorations(title) {
         })
         const dm = DASH_TAIL.exec(t)
         if (dm && isDecoration(dm[1])) t = t.slice(0, dm.index)
+        const pm = PIPE_TAIL.exec(t)
+        if (pm && isDecoration(pm[0])) t = t.slice(0, pm.index)
         t = t.replace(FEAT_TAIL, "").trim()
         if (t === before) break
     }
@@ -313,5 +329,6 @@ export function rank(result, providerOrder) {
     else if (m === "search") r += RANK_MATCH.search * (typeof result.similarity === "number" ? result.similarity : 1)
     if (providerOrder && providerOrder.length && providerOrder[0] === result.provider) r += RANK_PROVIDER_FIRST
     if (result.provider === "unison" && result.confidence && RANK_CONFIDENCE[result.confidence]) r += RANK_CONFIDENCE[result.confidence]
+    if (result.durationUnknown) r -= RANK_UNKNOWN_DURATION_PENALTY
     return r
 }

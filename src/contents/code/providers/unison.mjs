@@ -37,7 +37,7 @@ export function buildLookup(info, opts) {
     const pairs = [
         ["v", info.videoId],
         ["song", info.titleAlt || info.title],
-        ["artist", info.primaryArtist || info.artist],
+        ["artist", info.artist || info.primaryArtist], // the full cleaned artist string (SPEC 2.1f)
         ["album", info.album],
         ["duration", durationSeconds(info.durationS)],
     ]
@@ -60,14 +60,14 @@ function envelopeMessage(env, status, body) {
     return t !== "" ? t : "HTTP " + status
 }
 
-function matchedByOf(raw, usedVideoId) {
+function matchedByOf(raw) {
     if (typeof raw === "string") {
         const r = raw.toLowerCase()
         if (/(^|[^a-z])(v|video|videoid|video_id|isrc|spotify|apple_music|tidal|id)([^a-z]|$)/.test(r)) return "id"
         if (/song|artist|signature|title|name/.test(r)) return "signature"
         if (/search|fuzzy/.test(r)) return "search"
     }
-    return usedVideoId ? "id" : "signature"
+    return "signature" // never claim an exact-id match unless the response says so
 }
 
 function cleanName(s) {
@@ -115,7 +115,7 @@ function mapData(data, ctx) {
     if (!lyrics || (lyrics.lines.length === 0 && !hasText(lyrics.plain))) return { kind: "notfound", reason: "unparseable" }
     if (!lyrics.language && typeof data.language === "string" && data.language !== "") lyrics.language = data.language
     const id = String(data.id)
-    const matchedBy = ctx && ctx.matchedBy ? ctx.matchedBy : matchedByOf(data.matchedBy, ctx && ctx.usedVideoId)
+    const matchedBy = ctx && ctx.matchedBy ? ctx.matchedBy : matchedByOf(data.matchedBy)
     const credits = creditsOf(data)
     lyrics.source = { provider: PROVIDER, id: id, matchedBy: matchedBy, credits: credits }
     const res = {

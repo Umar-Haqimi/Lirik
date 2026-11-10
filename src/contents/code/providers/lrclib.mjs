@@ -5,8 +5,8 @@
 //   { kind: "ratelimited", retryAfterS } | { kind: "error", message, status, shape? }
 // and never throw. Pure module, V4 subset only (docs/DECISIONS.md D2).
 
-import { LRCLIB_BASE, USER_AGENT } from "../constants.mjs"
-import { normalize } from "../model.mjs"
+import { LRCLIB_BASE, USER_AGENT, MAX_META_CHARS, MAX_CANDIDATES_CONSIDERED } from "../constants.mjs"
+import { normalize, truncateCodePoints } from "../model.mjs"
 import { parseLrc } from "../lrc.mjs"
 import { parseLyricsfile } from "../lyricsfile.mjs"
 import {
@@ -16,7 +16,10 @@ import {
 
 export const PROVIDER = "lrclib"
 export const CREDITS = [{ text: "LRCLIB", url: LRCLIB_BASE }]
-const MAX_CANDIDATES = 50
+
+function cap(s) {
+    return typeof s === "string" ? truncateCodePoints(s.length > MAX_META_CHARS * 4 ? s.slice(0, MAX_META_CHARS * 4) : s, MAX_META_CHARS) : ""
+}
 
 function headers(opts) {
     const h = { "User-Agent": USER_AGENT, "Lrclib-Client": USER_AGENT, "Accept": "application/json" }
@@ -25,8 +28,10 @@ function headers(opts) {
 }
 
 function trackParams(info, useAlt) {
+    // Browser / channel sources carry decorations ("(Official Video)"): use the stripped title for `get` too.
+    const alt = useAlt || info.noisy
     return [
-        ["track_name", useAlt ? (info.titleAlt || info.title) : info.title],
+        ["track_name", alt ? (info.titleAlt || info.title) : info.title],
         ["artist_name", useAlt ? (info.primaryArtist || info.artist) : (info.artist || info.primaryArtist)],
     ]
 }
@@ -122,8 +127,8 @@ export function mapRecord(rec, matchedBy) {
             kind: "found", provider: PROVIDER, lyrics: best, providerId: id, matchedBy: matchedBy,
             credits: best.source.credits, durationS: typeof rec.duration === "number" && isFinite(rec.duration) ? rec.duration : null,
             instrumental: !!best.instrumental,
-            title: typeof rec.trackName === "string" ? rec.trackName : "",
-            artist: typeof rec.artistName === "string" ? rec.artistName : "",
+            title: cap(rec.trackName),
+            artist: cap(rec.artistName),
         }
     } catch (e) {
         return { kind: "error", message: "lrclib: " + (e && e.message ? e.message : e), status: 200 }
@@ -150,13 +155,15 @@ export function mapGet(status, headersIn, body, matchedBy) {
 function candidateOf(it, v1) {
     if (!it || typeof it !== "object" || Array.isArray(it)) return null
     if ((typeof it.id !== "number" && typeof it.id !== "string") || typeof it.trackName !== "string") return null
+    // v2 summaries always carry the has* flags; without them the shape is not what we expect.
+    if (!v1 && (typeof it.hasSyncedLyrics !== "boolean" || typeof it.hasPlainLyrics !== "boolean")) return null
     const hasSynced = v1 ? hasText(it.syncedLyrics) : it.hasSyncedLyrics === true
     const hasPlain = v1 ? hasText(it.plainLyrics) : it.hasPlainLyrics === true
     const c = {
         id: String(it.id),
-        title: it.trackName,
-        artist: typeof it.artistName === "string" ? it.artistName : "",
-        album: typeof it.albumName === "string" ? it.albumName : "",
+        title: cap(it.trackName),
+        artist: cap(it.artistName),
+        album: cap(it.albumName),
         duration: typeof it.duration === "number" && isFinite(it.duration) && it.duration > 0 ? it.duration : null,
         instrumental: it.instrumental === true,
         hasWordSync: it.hasWordSync === true,
@@ -185,11 +192,13 @@ export function mapSearch(status, headersIn, body, version) {
         const j = parseJson(body)
         if (!j.ok || !Array.isArray(j.value)) return { kind: "error", message: "unexpected search response", status: status, shape: true }
         const list = []
-        for (let i = 0; i < j.value.length && list.length < MAX_CANDIDATES; i++) {
+        let bad = 0
+        for (let i = 0; i < j.value.length && i < MAX_CANDIDATES_CONSIDERED; i++) {
             const c = candidateOf(j.value[i], version === 1)
             if (c) list.push(c)
+            else bad++
         }
-        if (j.value.length > 0 && list.length === 0) return { kind: "error", message: "unexpected search response", status: status, shape: true }
+        if (j.value.length > 0 && (list.length === 0 || (version !== 1 && bad > 0))) return { kind: "error", message: "unexpected search response", status: status, shape: true }
         return { kind: "candidates", list: list }
     } catch (e) {
         return { kind: "error", message: "lrclib: " + (e && e.message ? e.message : e), status: status }

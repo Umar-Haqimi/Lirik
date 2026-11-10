@@ -7,14 +7,20 @@
 //     cache (synchronous, or null): get(key) -> row|null, put(key, row), touch(key, t),
 //                                   getPrefs(key) -> prefs|null, setPrefs(key, prefs)
 //     now() -> ms, schedule(ms, fn) -> { cancel() }, random() -> [0, 1)
-//     onUpdate(state) is called on every state change
+//     onUpdate(state) is called on every state change (identical consecutive states are not re-emitted)
 //
-// Every callback result carries its lookup generation and is dropped when stale.
+// Every callback result carries its lookup generation and is dropped when stale. Any method may be
+// called from inside onUpdate: the pipeline notices the generation change and stops.
+//
+// Request budget (SPEC §9): the debounce is adaptive (500 ms normally, 2000 ms while tracks change
+// faster than every 1.5 s) and each provider starts at most 2 lookups in any 5 s window
+// (user-initiated retry/refetch/lookUpAnyway are exempt). Cooldowns from 429/503 always apply.
 
 import {
-    DEBOUNCE_MS, SWAP_WINDOW_MS, RETRY_JITTER_FRACTION, LOOKUP_PENDING_MAX_RETRIES, NOTFOUND_TTL_MS,
-    FOUND_TTL_MS, CACHE_SCHEMA_V, MAX_ALTERNATES, MIN_TRACK_S, MAX_TRACK_S, OFFSET_MIN_MS, OFFSET_MAX_MS,
-    INCOMPLETE_TTL_MS, AUTO_RETRY_MAX, LRCLIB_MAX_CANDIDATE_TRIES, ALT_MAX_TRIES, PROVIDER_NAMES,
+    DEBOUNCE_MS, DEBOUNCE_MAX_MS, SWAP_WINDOW_MS, RETRY_JITTER_FRACTION, LOOKUP_PENDING_MAX_RETRIES,
+    PENDING_MAX_WAIT_S, NOTFOUND_TTL_MS, FOUND_TTL_MS, CACHE_SCHEMA_V, MAX_ALTERNATES, MIN_TRACK_S, MAX_TRACK_S,
+    OFFSET_MIN_MS, OFFSET_MAX_MS, INCOMPLETE_TTL_MS, AUTO_RETRY_MAX, LRCLIB_MAX_CANDIDATE_TRIES, ALT_MAX_TRIES,
+    PROVIDER_NAMES, THROTTLE_WINDOW_MS, THROTTLE_MAX_STARTS,
 } from "./constants.mjs"
 import { stableSort, clamp } from "./model.mjs"
 import { clean, skipReason } from "./trackinfo.mjs"
@@ -27,6 +33,8 @@ import { buildLookup as unBuildLookup, buildById as unBuildById, mapLookup as un
 
 // Skip reasons the user may override with lookUpAnyway().
 const OVERRIDABLE = { "too-short": true, "too-long": true, "excluded-player": true, "track-disabled": true }
+const BURST_MS = 200 // setTrack calls closer than this belong to one metadata burst
+const RAPID_MS = 1500 // a track change this soon after the previous one switches to the long debounce
 
 function parseList(v) {
     let arr = []
@@ -84,6 +92,26 @@ function errText(e) {
     return e && e.message ? String(e.message) : String(e)
 }
 
+function knownDuration(d) {
+    return typeof d === "number" && isFinite(d) && d > 0
+}
+
+function sameState(a, b) {
+    return !!a && !!b && a.status === b.status && a.lyrics === b.lyrics && a.source === b.source &&
+        a.trackKey === b.trackKey && a.trackInfo === b.trackInfo && a.offsetMs === b.offsetMs &&
+        a.retryInS === b.retryInS && a.retryAt === b.retryAt && a.skipReason === b.skipReason &&
+        JSON.stringify(a.alternates) === JSON.stringify(b.alternates) && JSON.stringify(a.error) === JSON.stringify(b.error)
+}
+
+function sameAlt(a, b) {
+    return a.provider === b.provider && String(a.id) === String(b.id)
+}
+
+function pushUnique(list, alt, limit) {
+    for (let i = 0; i < list.length; i++) if (sameAlt(list[i], alt)) return
+    if (list.length < limit) list.push(alt)
+}
+
 export function createResolver(deps) {
     const http = deps.http
     const cache = deps.cache || null
@@ -91,26 +119,41 @@ export function createResolver(deps) {
     const schedule = deps.schedule
     const random = deps.random || function () { return 0 }
     const publish = deps.onUpdate || function () {}
-    const log = deps.log || function () {}
+    function log(m) {
+        try {
+            if (deps.log) deps.log(m)
+        } catch (e) {
+            // a throwing logger must never break a lookup
+        }
+    }
 
     let cfg = normalizeConfig({})
     let cfgSig = JSON.stringify(cfg)
     let gen = 0
+    let disposed = false
     let cur = null // the current track: { key, info, override, prefs, timer, retry, autoRetries }
     let L = null // the active lookup
     const cooldown = { lrclib: 0, unison: 0 }
+    const starts = { lrclib: [], unison: [] } // recent lookup start times per provider
     const memPrefs = {}
+    let lastSetAt = -1e15 // last setTrack call
+    let lastChangeAt = -1e15 // last non-burst track change
+    let lastWait = DEBOUNCE_MS
+    let published = null
 
     const st = {
         status: "idle", lyrics: null, source: null, trackKey: null, trackInfo: null, offsetMs: 0,
-        alternates: [], retryInS: null, error: null, generation: 0, skipReason: null,
+        alternates: [], retryInS: null, retryAt: null, error: null, generation: 0, skipReason: null,
     }
 
     function emit(patch) {
         if (patch) Object.assign(st, patch)
         st.generation = gen
+        if (sameState(published, st)) return
+        const snap = Object.assign({}, st)
+        published = snap
         try {
-            publish(Object.assign({}, st))
+            publish(Object.assign({}, snap))
         } catch (e) {
             log("onUpdate threw: " + errText(e))
         }
@@ -118,13 +161,13 @@ export function createResolver(deps) {
 
     function resetState(patch) {
         Object.assign(st, {
-            status: "idle", lyrics: null, source: null, alternates: [], retryInS: null, error: null, skipReason: null,
+            status: "idle", lyrics: null, source: null, alternates: [], retryInS: null, retryAt: null, error: null, skipReason: null,
         }, patch || {})
     }
 
     // --- cache and prefs adapters ---------------------------------------------
 
-    function persistent() {
+    function rowsOn() {
         return !!cache && cfg.cacheEnabled
     }
 
@@ -137,20 +180,21 @@ export function createResolver(deps) {
         }
     }
 
+    // Per-track prefs are user preferences, not cache: they persist even when the lyrics cache is off.
     function loadPrefs(key) {
         let p = null
-        if (persistent()) p = safe(function () { return cache.getPrefs(key) }, null)
+        if (cache) p = safe(function () { return cache.getPrefs(key) }, null)
         if (!p) p = memPrefs[key] || null
         return normPrefs(p)
     }
 
     function savePrefs(key, p) {
         memPrefs[key] = p
-        if (persistent()) safe(function () { cache.setPrefs(key, p) }, null)
+        if (cache) safe(function () { cache.setPrefs(key, p) }, null)
     }
 
     function cacheGet(key) {
-        if (!persistent()) return null
+        if (!rowsOn()) return null
         const row = safe(function () { return cache.get(key) }, null)
         if (!row || typeof row !== "object" || row.schemaV !== CACHE_SCHEMA_V) return null
         if (row.status === "found") {
@@ -162,7 +206,7 @@ export function createResolver(deps) {
     }
 
     function cachePut(key, row) {
-        if (persistent()) safe(function () { cache.put(key, row) }, null)
+        if (rowsOn()) safe(function () { cache.put(key, row) }, null)
     }
 
     function foundRow(res, alternates, incomplete) {
@@ -180,6 +224,7 @@ export function createResolver(deps) {
         const lk = {
             gen: gen, c: c, cancelled: false, finished: false, inflight: {}, timers: [], order: [], providers: {},
             results: [], altIds: [], shown: null, shownAt: 0, shownTier: 0, background: false, row: null, bypass: false,
+            manual: false, settleScheduled: false,
         }
         if (extra) Object.assign(lk, extra)
         return lk
@@ -216,9 +261,11 @@ export function createResolver(deps) {
 
     /** One request for provider `name`; at most one in flight per provider per lookup. */
     function send(lk, name, spec, mapper, cb) {
-        const token = { h: null }
+        const token = { h: null, done: false }
         lk.inflight[name] = token
         function done(err, res) {
+            if (token.done) return // a callback fires once, even if the http layer misbehaves
+            token.done = true
             if (lk.inflight[name] === token) lk.inflight[name] = null
             if (lk.cancelled) return
             let mapped
@@ -270,6 +317,13 @@ export function createResolver(deps) {
         }
     }
 
+    /** Mark whether the duration backs this result (trap 7): unknown durations rank lower. */
+    function markDuration(lk, m) {
+        const qd = lk.c.info.durationS
+        m.durationUnknown = !(knownDuration(qd) && (m.provider === "unison" || knownDuration(m.durationS)))
+        return m
+    }
+
     // --- providers ----------------------------------------------------------------
 
     function runLrclib(lk) {
@@ -277,7 +331,7 @@ export function createResolver(deps) {
         send(lk, "lrclib", lrBuildGet(info, httpOpts()), function (s, h, b) { return lrMapGet(s, h, b, "signature") }, function (m) {
             if (m.kind === "found") {
                 if (durationRejects(info.durationS, m.durationS)) return lrSearch(lk, 2)
-                return finish(lk, "lrclib", m)
+                return finish(lk, "lrclib", markDuration(lk, m))
             }
             if (m.kind === "notfound" || m.kind === "notmodified") return lrSearch(lk, 2)
             return failOutcome(lk, "lrclib", m)
@@ -290,7 +344,8 @@ export function createResolver(deps) {
         send(lk, "lrclib", spec, function (s, h, b) { return lrMapSearch(s, h, b, version) }, function (m) {
             if (m.kind === "candidates") return lrPick(lk, m.list, version)
             if (m.kind === "ratelimited") return failOutcome(lk, "lrclib", m)
-            if (version === 2) return lrSearch(lk, 1) // v2 gone, unexpected shape or failing: try v1
+            // v2 is beta: fall back to v1 only when its answer has an unexpected shape.
+            if (version === 2 && m.kind === "error" && m.shape) return lrSearch(lk, 1)
             if (m.kind === "notfound") return finish(lk, "lrclib", { kind: "notfound" })
             return failOutcome(lk, "lrclib", m)
         })
@@ -317,7 +372,7 @@ export function createResolver(deps) {
         function handle(m) {
             if (m.kind === "found" && !durationRejects(lk.c.info.durationS, m.durationS)) {
                 m.similarity = cand.a.titleSim
-                return finish(lk, "lrclib", m)
+                return finish(lk, "lrclib", markDuration(lk, m))
             }
             if (m.kind === "found" || m.kind === "notfound" || m.kind === "notmodified") return lrTry(lk, sorted, i + 1, version)
             return failOutcome(lk, "lrclib", m)
@@ -332,15 +387,20 @@ export function createResolver(deps) {
         const etag = !lk.bypass && row && row.provider === "unison" && row.etag ? row.etag : null
         function attempt(n) {
             const spec = unBuildLookup(info, { base: httpOpts().base, etag: etag })
-            send(lk, "unison", spec, function (s, h, b) { return unMapLookup(s, h, b, { usedVideoId: !!info.videoId }) }, function (m) {
-                if (m.kind === "found" || m.kind === "notfound") return finish(lk, "unison", m)
+            send(lk, "unison", spec, function (s, h, b) { return unMapLookup(s, h, b, null) }, function (m) {
+                if (m.kind === "found") return finish(lk, "unison", markDuration(lk, m))
+                if (m.kind === "notfound") return finish(lk, "unison", m)
                 if (m.kind === "notmodified") {
-                    if (row && row.status === "found") return finish(lk, "unison", synthFromRow(row))
+                    if (row && row.status === "found") return finish(lk, "unison", markDuration(lk, synthFromRow(row)))
                     return finish(lk, "unison", { kind: "error", message: "unexpected 304", status: 304 })
                 }
                 if (m.kind === "pending") {
                     if (n >= LOOKUP_PENDING_MAX_RETRIES) return finish(lk, "unison", { kind: "error", message: "lookup pending", status: 503 })
-                    const wait = m.retryAfterS * 1000 * (1 + random() * RETRY_JITTER_FRACTION)
+                    if (m.retryAfterS > PENDING_MAX_WAIT_S) {
+                        // A long wait is a cooldown for this provider, not a reason to hold the lookup.
+                        return failOutcome(lk, "unison", { kind: "ratelimited", retryAfterS: m.retryAfterS, status: 503 })
+                    }
+                    const wait = Math.min(PENDING_MAX_WAIT_S * 1000, m.retryAfterS * 1000 * (1 + random() * RETRY_JITTER_FRACTION))
                     lk.timers.push(schedule(wait, function () {
                         if (!lk.cancelled) attempt(n + 1)
                     }))
@@ -361,11 +421,28 @@ export function createResolver(deps) {
         }
     }
 
+    /** Wait (ms) before this provider may start another lookup; 0 when allowed now. */
+    function throttleWait(lk, name) {
+        if (lk.manual) return 0
+        const t = now()
+        const list = starts[name]
+        while (list.length && t - list[0] >= THROTTLE_WINDOW_MS) list.shift()
+        if (list.length >= THROTTLE_MAX_STARTS) return list[list.length - THROTTLE_MAX_STARTS] + THROTTLE_WINDOW_MS - t
+        return 0
+    }
+
     function runProvider(lk, name) {
+        if (lk.cancelled) return
         if (cooldown[name] > now()) {
             finish(lk, name, { kind: "ratelimited", retryAfterS: cooldownLeftS(name), status: 0, skipped: true })
             return
         }
+        const wait = throttleWait(lk, name)
+        if (wait > 0) {
+            lk.timers.push(schedule(wait, function () { runProvider(lk, name) }))
+            return
+        }
+        starts[name].push(now())
         if (name === "lrclib") runLrclib(lk)
         else runUnison(lk)
     }
@@ -389,14 +466,25 @@ export function createResolver(deps) {
         if (first) lk.shownAt = now()
         emit({
             status: statusOf(res.lyrics), lyrics: res.lyrics, source: res.lyrics.source || null,
-            error: null, retryInS: null, skipReason: null,
+            error: null, retryInS: null, retryAt: null, skipReason: null,
         })
     }
 
     function considerDisplay(lk, res) {
         if (lk.background) return
         if (!statusOf(res.lyrics)) return
-        if (!lk.shown) return show(lk, res)
+        if (!lk.shown) {
+            show(lk, res)
+            // Once the swap window closes nothing can change the display: cache what we have even if a
+            // slow provider is still pending.
+            if (!lk.cancelled && !lk.settleScheduled) {
+                lk.settleScheduled = true
+                lk.timers.push(schedule(SWAP_WINDOW_MS, function () {
+                    if (!lk.cancelled && !lk.finished) finalize(lk)
+                }))
+            }
+            return
+        }
         // Swap only to a strictly higher tier, and only shortly after the first display.
         if (tierValue(res) > lk.shownTier && now() - lk.shownAt <= SWAP_WINDOW_MS) show(lk, res)
     }
@@ -410,6 +498,7 @@ export function createResolver(deps) {
         if (outcome.kind === "found") {
             lk.results.push(outcome)
             considerDisplay(lk, outcome)
+            if (lk.cancelled) return
         }
         checkComplete(lk)
     }
@@ -423,13 +512,9 @@ export function createResolver(deps) {
         finalize(lk)
     }
 
-    function sameAlt(a, b) {
-        return a.provider === b.provider && String(a.id) === String(b.id)
-    }
-
-    function pushUnique(list, alt, limit) {
-        for (let i = 0; i < list.length; i++) if (sameAlt(list[i], alt)) return
-        if (list.length < limit) list.push(alt)
+    function pushedBack(row) {
+        // A stale row whose revalidation failed: look again in about an hour, not on every play.
+        return Object.assign({}, row, { fetchedAt: now() - FOUND_TTL_MS + INCOMPLETE_TTL_MS, lastUsedAt: now() })
     }
 
     function finalize(lk) {
@@ -440,7 +525,9 @@ export function createResolver(deps) {
         const errs = []
         for (let i = 0; i < lk.order.length; i++) {
             const o = lk.providers[lk.order[i]].outcome
-            if (o.kind === "ratelimited") {
+            if (!o) {
+                incomplete = true // still pending (settled early)
+            } else if (o.kind === "ratelimited") {
                 incomplete = true
                 rl.push(lk.order[i])
             } else if (o.kind === "error") {
@@ -472,15 +559,18 @@ export function createResolver(deps) {
             }
             return
         }
-        if (lk.background) return // keep the older cached row
+        if (lk.background) {
+            if (lk.row && lk.row.status === "found") cachePut(key, pushedBack(lk.row))
+            return
+        }
         if (rl.length > 0) {
             let min = -1
             for (let i = 0; i < rl.length; i++) {
                 const left = cooldownLeftMs(rl[i])
                 if (min < 0 || left < min) min = left
             }
-            emit({ status: "ratelimited", lyrics: null, source: null, retryInS: Math.ceil(min / 1000), error: null })
-            scheduleAutoRetry(lk.c, min)
+            emit({ status: "ratelimited", lyrics: null, source: null, retryInS: Math.ceil(min / 1000), retryAt: now() + min, error: null })
+            if (!lk.cancelled) scheduleAutoRetry(lk, rl, min)
             return
         }
         if (errs.length > 0 && errs.length === lk.order.length) {
@@ -492,27 +582,34 @@ export function createResolver(deps) {
                 }
             }
             const e = errs[0]
-            emit({ status: "error", lyrics: null, source: null, retryInS: null, error: { provider: name, status: e.status || 0, message: e.message || "" } })
+            emit({ status: "error", lyrics: null, source: null, retryInS: null, retryAt: null, error: { provider: name, status: e.status || 0, message: e.message || "" } })
             return
         }
-        emit({ status: "notfound", lyrics: null, source: null, retryInS: null, error: null })
+        emit({ status: "notfound", lyrics: null, source: null, retryInS: null, retryAt: null, error: null })
         if (errs.length === 0) {
             const t = now()
+            // `provider` of a notfound row lists the providers that were asked (a newly enabled one makes it a miss).
             cachePut(key, {
-                status: "notfound", provider: null, providerId: null, etag: null, schemaV: CACHE_SCHEMA_V, payload: null,
+                status: "notfound", provider: lk.order.join(","), providerId: null, etag: null, schemaV: CACHE_SCHEMA_V, payload: null,
                 alternates: [], fetchedAt: t, lastUsedAt: t,
             })
         }
     }
 
-    function scheduleAutoRetry(c, afterMs) {
+    /** After a cooldown: ask only the rate-limited providers again, keeping the other outcomes. */
+    function scheduleAutoRetry(lk, names, afterMs) {
+        const c = lk.c
         if (c.autoRetries >= AUTO_RETRY_MAX) return
         c.autoRetries++
         const g = gen
         c.retry = schedule(Math.max(0, afterMs), function () {
             c.retry = null
-            if (cur !== c || g !== gen) return
-            begin(c, { bypass: true })
+            if (disposed || cur !== c || g !== gen || lk.cancelled || L !== lk) return
+            lk.finished = false
+            for (let i = 0; i < names.length; i++) lk.providers[names[i]] = { done: false, outcome: null }
+            emit({ status: "loading", retryInS: null, retryAt: null })
+            if (lk.cancelled || g !== gen) return
+            for (let i = 0; i < names.length; i++) runProvider(lk, names[i])
         })
     }
 
@@ -521,7 +618,7 @@ export function createResolver(deps) {
     function fetchById(lk, alt, cb) {
         const name = alt.provider
         if (name !== "lrclib" && name !== "unison") return cb({ kind: "error", message: "unknown provider", status: 0 })
-        if (cooldown[name] > now()) return cb({ kind: "ratelimited", retryAfterS: cooldownLeftS(name), status: 0, skipped: true })
+        if (cooldown[name] > now()) return cb({ kind: "ratelimited", retryAfterS: cooldownLeftS(name), status: 0, skipped: true, provider: name })
         const info = lk.c.info
         let spec
         let mapper
@@ -535,6 +632,8 @@ export function createResolver(deps) {
         send(lk, name, spec, mapper, function (m) {
             if (m.kind === "found" && durationRejects(info.durationS, m.durationS)) m = { kind: "notfound" }
             if (m.kind === "ratelimited" && !m.skipped) setCooldown(name, m.retryAfterS)
+            if (m.kind === "found") markDuration(lk, m)
+            m.provider = m.provider || name
             cb(m)
         })
     }
@@ -542,7 +641,13 @@ export function createResolver(deps) {
     function fetchPinned(lk, pin, oldRow) {
         fetchById(lk, pin, function (m) {
             if (m.kind !== "found" || !statusOf(m.lyrics)) {
-                runPipeline(lk) // the pinned version is gone or unreachable: normal lookup
+                if (m.kind === "notfound" || m.kind === "found") {
+                    // The pinned version is gone: forget the pin (not on rate limits or errors).
+                    const prefs = Object.assign({}, lk.c.prefs || loadPrefs(lk.c.key), { pinnedProvider: null, pinnedId: null })
+                    lk.c.prefs = prefs
+                    savePrefs(lk.c.key, prefs)
+                }
+                runPipeline(lk) // normal lookup
                 return
             }
             lk.finished = true
@@ -557,6 +662,7 @@ export function createResolver(deps) {
             for (let i = 0; i < alts.length; i++) if (!sameAlt(alts[i], pin)) filtered.push(alts[i])
             cachePut(lk.c.key, foundRow(m, filtered, false))
             show(lk, m)
+            if (lk.cancelled) return
             emit({ alternates: filtered })
         })
     }
@@ -567,13 +673,21 @@ export function createResolver(deps) {
         return { enabled: cfg.enabled, minTrackS: cfg.minTrackS, maxTrackS: cfg.maxTrackS, excludedPlayers: cfg.excludedPlayers }
     }
 
+    function touchRow(key) {
+        if (rowsOn()) safe(function () { cache.touch(key, now()) }, null)
+    }
+
+    /**
+     * opts: { bypass: "none" | "negative" | "all", manual }.
+     * "negative" ignores a cached notfound row only (retry); "all" ignores every cached row and ETag (refetch).
+     */
     function begin(c, opts) {
         if (c.timer) {
             c.timer.cancel()
             c.timer = null
         }
         cancelLookup()
-        gen++
+        const g = ++gen
         const prefs = loadPrefs(c.key)
         c.prefs = prefs
         const base = { trackKey: c.key, trackInfo: c.info, offsetMs: prefs.offsetMs }
@@ -588,9 +702,17 @@ export function createResolver(deps) {
             emit()
             return
         }
-        const bypass = !!opts.bypass
+        const bypass = opts.bypass || "none"
         const pin = prefs.pinnedProvider && prefs.pinnedId ? { provider: prefs.pinnedProvider, id: prefs.pinnedId } : null
-        const row = bypass ? null : cacheGet(c.key)
+        let row = bypass === "all" ? null : cacheGet(c.key)
+        if (row && row.status === "found" && cfg.providers.indexOf(row.provider) < 0) row = null // its provider is disabled now
+        if (row && row.status === "notfound") {
+            const tried = typeof row.provider === "string" ? row.provider.split(",") : []
+            for (let i = 0; i < cfg.providers.length; i++) {
+                if (tried.indexOf(cfg.providers[i]) < 0) row = null // an enabled provider was never asked
+                if (!row) break
+            }
+        }
         if (row && row.status === "found" && (!pin || (row.provider === pin.provider && String(row.providerId) === pin.id))) {
             const stale = now() - row.fetchedAt >= FOUND_TTL_MS
             resetState(Object.assign({
@@ -598,22 +720,25 @@ export function createResolver(deps) {
                 alternates: Array.isArray(row.alternates) ? row.alternates.slice(0, MAX_ALTERNATES) : [],
             }, base))
             emit()
-            if (persistent()) safe(function () { cache.touch(c.key, now()) }, null)
+            if (g !== gen) return
+            touchRow(c.key)
             if (stale) {
-                L = newLookup(c, { background: true, row: row })
+                L = newLookup(c, { background: true, row: row, manual: !!opts.manual })
                 runPipeline(L)
             }
             return
         }
-        if (row && row.status === "notfound" && !pin && now() - row.fetchedAt < NOTFOUND_TTL_MS) {
+        if (row && row.status === "notfound" && !pin && bypass === "none" && now() - row.fetchedAt < NOTFOUND_TTL_MS) {
             resetState(Object.assign({ status: "notfound" }, base))
             emit()
-            if (persistent()) safe(function () { cache.touch(c.key, now()) }, null)
+            if (g !== gen) return
+            touchRow(c.key)
             return
         }
         resetState(Object.assign({ status: "loading" }, base))
         emit()
-        L = newLookup(c, { bypass: bypass })
+        if (g !== gen || cur !== c) return // onUpdate called back into the resolver
+        L = newLookup(c, { bypass: bypass === "all", manual: !!opts.manual })
         if (pin) fetchPinned(L, pin, row)
         else runPipeline(L)
     }
@@ -622,6 +747,7 @@ export function createResolver(deps) {
 
     /** Configure: { enabled, providers: ["lrclib","unison"] | "lrclib,unison", minTrackS, maxTrackS, excludedPlayers, cacheEnabled, devBaseUrl }. */
     function setConfig(c) {
+        if (disposed) return
         const merged = normalizeConfig(Object.assign({}, cfg, c || {}))
         const sig = JSON.stringify(merged)
         if (sig === cfgSig) return
@@ -629,11 +755,12 @@ export function createResolver(deps) {
         cfgSig = sig
         if (!cur) return
         if (cur.timer && cfg.enabled) return // still debouncing: the new config applies when it fires
-        begin(cur, { bypass: false })
+        begin(cur, { bypass: "none" })
     }
 
     /** New player metadata: { title, artist, album, lengthUs, artUrl, identity }, or null when nothing plays. */
     function setTrack(meta) {
+        if (disposed) return
         if (!meta) {
             cancelLookup()
             if (cur && cur.timer) cur.timer.cancel()
@@ -654,64 +781,87 @@ export function createResolver(deps) {
             if (cur.timer) cur.info = info // a metadata burst that did not change the key: keep the latest info
             return
         }
+        // Adaptive debounce: 500 ms normally; a change within 1.5 s of the previous one (rapid skipping)
+        // waits 2 s. Calls within 200 ms of each other are one metadata burst and keep the same wait.
+        const t = now()
+        let wait
+        if (t - lastSetAt < BURST_MS) {
+            wait = lastWait
+        } else {
+            wait = t - lastChangeAt < RAPID_MS ? DEBOUNCE_MAX_MS : DEBOUNCE_MS
+            lastChangeAt = t
+            lastWait = wait
+        }
+        lastSetAt = t
         cancelLookup()
         if (cur && cur.timer) cur.timer.cancel()
-        gen++
+        const g = ++gen
         const c = { key: info.key, info: info, override: false, prefs: null, timer: null, retry: null, autoRetries: 0 }
         cur = c
         c.prefs = loadPrefs(info.key)
         resetState({ trackKey: info.key, trackInfo: info, offsetMs: c.prefs.offsetMs })
         emit()
+        if (g !== gen || cur !== c) return // onUpdate called back into the resolver
         if (!cfg.enabled) {
-            begin(c, { bypass: false })
+            begin(c, { bypass: "none" })
             return
         }
-        c.timer = schedule(DEBOUNCE_MS, function () {
+        c.timer = schedule(wait, function () {
             if (cur !== c) return
             c.timer = null
-            begin(c, { bypass: false })
+            begin(c, { bypass: "none" })
         })
     }
 
-    /** Look up again (error / ratelimited / notfound), bypassing cached negatives. Provider cooldowns still apply. */
+    /** Look up again after an error / rate limit / notfound: ignores a cached notfound, still serves a cached found row. */
     function retry() {
-        if (cur) begin(cur, { bypass: true })
+        if (!disposed && cur) begin(cur, { bypass: "negative", manual: true })
     }
 
-    /** Fetch fresh from the providers, bypassing the cache. */
+    /** Fetch fresh from the providers, bypassing every cached row and ETag. */
     function refetch() {
-        if (cur) begin(cur, { bypass: true })
+        if (!disposed && cur) begin(cur, { bypass: "all", manual: true })
     }
 
     /** Ignore the skip rules (length, excluded player, hidden for this track) for the current track. */
     function lookUpAnyway() {
-        if (!cur) return
+        if (disposed || !cur) return
         cur.override = true
         const p = loadPrefs(cur.key)
         if (p.lyricsDisabled) {
             p.lyricsDisabled = false
             savePrefs(cur.key, p)
         }
-        begin(cur, { bypass: false })
+        begin(cur, { bypass: "none", manual: true })
     }
 
-    /** Show the next alternate version and pin it for this track. Returns false when there is none. */
+    /**
+     * Show the next alternate version and pin it for this track. Returns false when there is none.
+     * A rate-limited alternate stops the walk: the list is kept and retryInS / retryAt are set while
+     * the current lyrics stay on screen.
+     */
     function tryNextMatch() {
-        if (!cur || !st.lyrics || st.alternates.length === 0) return false
+        if (disposed || !cur || !st.lyrics || st.alternates.length === 0) return false
         const c = cur
         const list = st.alternates.slice()
         cancelLookup()
-        gen++
-        const lk = newLookup(c, { kind: "alt" })
+        const g = ++gen
+        const lk = newLookup(c, { kind: "alt", manual: true })
         L = lk
         function tryAlt(i) {
-            if (lk.cancelled) return
+            if (lk.cancelled || g !== gen) return
             if (i >= list.length || i >= ALT_MAX_TRIES) {
                 lk.finished = true
                 emit({ alternates: list.slice(Math.min(i, list.length)) })
                 return
             }
             fetchById(lk, list[i], function (m) {
+                if (m.kind === "ratelimited") {
+                    lk.finished = true
+                    const left = cooldownLeftMs(list[i].provider)
+                    emit({ alternates: list.slice(i), retryInS: Math.ceil(left / 1000), retryAt: now() + left })
+                    return
+                }
                 if (m.kind !== "found" || !statusOf(m.lyrics)) return tryAlt(i + 1)
                 const prev = st.source
                 const alts = list.slice(i + 1)
@@ -722,11 +872,10 @@ export function createResolver(deps) {
                 c.prefs = prefs
                 savePrefs(c.key, prefs)
                 cachePut(c.key, foundRow(m, alts, false))
-                Object.assign(st, {
+                emit({
                     status: statusOf(m.lyrics), lyrics: m.lyrics, source: m.lyrics.source || null,
-                    alternates: alts, error: null, retryInS: null, skipReason: null,
+                    alternates: alts, error: null, retryInS: null, retryAt: null, skipReason: null,
                 })
-                emit()
             })
         }
         tryAlt(0)
@@ -735,7 +884,7 @@ export function createResolver(deps) {
 
     /** Per-track offset in ms (positive = lyrics later), clamped to the allowed range and persisted. */
     function setTrackOffset(ms) {
-        if (!cur) return
+        if (disposed || !cur) return
         const v = clamp(Math.round(Number(ms) || 0), OFFSET_MIN_MS, OFFSET_MAX_MS)
         const prefs = Object.assign({}, cur.prefs || loadPrefs(cur.key), { offsetMs: v })
         cur.prefs = prefs
@@ -743,9 +892,17 @@ export function createResolver(deps) {
         emit({ offsetMs: v })
     }
 
+    /** Forget the pinned version for the current track (the next lookup picks the best again). */
+    function unpin() {
+        if (disposed || !cur) return
+        const prefs = Object.assign({}, cur.prefs || loadPrefs(cur.key), { pinnedProvider: null, pinnedId: null })
+        cur.prefs = prefs
+        savePrefs(cur.key, prefs)
+    }
+
     /** "Hide lyrics for this track": persisted; the track is skipped from now on. */
     function hideForTrack() {
-        if (!cur) return
+        if (disposed || !cur) return
         const prefs = Object.assign({}, cur.prefs || loadPrefs(cur.key), { lyricsDisabled: true })
         cur.prefs = prefs
         savePrefs(cur.key, prefs)
@@ -759,12 +916,25 @@ export function createResolver(deps) {
         emit()
     }
 
+    /** Cancel every timer and in-flight request; the resolver ignores all calls afterwards. */
+    function dispose() {
+        if (disposed) return
+        disposed = true
+        if (cur && cur.timer) {
+            cur.timer.cancel()
+            cur.timer = null
+        }
+        cancelLookup()
+        gen++
+    }
+
     function state() {
         return Object.assign({}, st)
     }
 
     return {
         setConfig: setConfig, setTrack: setTrack, retry: retry, refetch: refetch, lookUpAnyway: lookUpAnyway,
-        tryNextMatch: tryNextMatch, setTrackOffset: setTrackOffset, hideForTrack: hideForTrack, state: state,
+        tryNextMatch: tryNextMatch, setTrackOffset: setTrackOffset, unpin: unpin, hideForTrack: hideForTrack,
+        dispose: dispose, state: state,
     }
 }

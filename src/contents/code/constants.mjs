@@ -93,3 +93,14 @@ export const MAX_RETRY_AFTER_S = 3600
 export const AUTO_RETRY_MAX = 5 // automatic retries after a cooldown, per track
 export const LRCLIB_MAX_CANDIDATE_TRIES = 2 // get/{id} attempts after a search
 export const ALT_MAX_TRIES = 4
+
+// --- Review fixes (M4a) ------------------------------------------------------
+export const MAX_META_CHARS = 300 // title / artist / album cap before any text processing
+export const MAX_ARTISTS = 8 // artist names considered per artist string
+export const MAX_CANDIDATES_CONSIDERED = 20 // search candidates mapped and ranked
+export const RANK_UNKNOWN_DURATION_PENALTY = 10
+export const PENDING_MAX_WAIT_S = 10 // LOOKUP_PENDING: longer Retry-After becomes a provider cooldown
+export const THROTTLE_WINDOW_MS = 5000 // at most THROTTLE_MAX_STARTS lookups per provider in this window
+export const THROTTLE_MAX_STARTS = 2
+export const DEBOUNCE_MAX_MS = 2000 // adaptive debounce ceiling while tracks keep changing
+export const QUIET_RESET_MS = 5000

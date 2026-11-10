@@ -195,3 +195,70 @@ cases.push({ name: "acceptCandidate: a closer duration scores higher", fn: () =>
     assert.ok(near.score > mid.score && mid.score > far.score && far.score > none.score)
     assert.equal(near.reason, "")
 } })
+
+// --- review fixes (M4a follow-up) ---------------------------------------------------
+
+cases.push({ name: "normalizeText: folds letters with no decomposition", fn: () => {
+    assert.equal(normalizeText("Bj\u00f8rk"), "bjork")
+    assert.equal(normalizeText("\u0110or\u0111e"), "dorde")
+    assert.equal(normalizeText("\u0141\u00f3d\u017a"), "lodz")
+    assert.equal(normalizeText("\u00c6on \u0152uvre"), "aeon oeuvre")
+    assert.equal(normalizeText("Stra\u00dfe"), "strasse")
+    assert.equal(normalizeText("\u00de\u00f3r"), "thor")
+    assert.equal(similarity("Bj\u00f8rk", "Bjork"), 1)
+} })
+cases.push({ name: "normalizeText: keeps iteration marks and astral characters", fn: () => {
+    assert.equal(normalizeText("\u3005"), "\u3005")
+    assert.equal(normalizeText("\u4eba\u3005"), "\u4eba\u3005")
+    assert.equal(normalizeText("\ud842\udfb7\u91ce\u5bb6"), "\ud842\udfb7\u91ce\u5bb6")
+    assert.equal(normalizeText("a \u3001 b"), "a b") // ideographic comma is punctuation
+    assert.equal(normalizeText("\ud83c\udfb5 la"), "\ud83c\udfb5 la")
+} })
+cases.push({ name: "similarity / acceptCandidate: CJK and Hangul", fn: () => {
+    assert.equal(similarity("\u591c\u306b\u99c6\u3051\u308b", "\u591c\u306b\u99c6\u3051\u308b"), 1)
+    assert.ok(similarity("\u591c\u306b\u99c6\u3051\u308b", "\u671d\u306b\u99c6\u3051\u308b") < 0.85)
+    assert.equal(similarity("\ubd04\ub0a0", "\ubd04\ub0a0"), 1)
+    const jp = q({ title: "\u591c\u306b\u99c6\u3051\u308b", artist: "YOASOBI" })
+    assert.equal(acceptCandidate(jp, { title: "\u591c\u306b\u99c6\u3051\u308b", artist: "YOASOBI", duration: 200 }).ok, true)
+    assert.equal(acceptCandidate(jp, { title: "\u671d\u306b\u99c6\u3051\u308b", artist: "YOASOBI", duration: 200 }).ok, false)
+    const kr = q({ title: "\ubd04\ub0a0", artist: "\ubc29\ud0c4\uc18c\ub144\ub2e8" })
+    assert.equal(acceptCandidate(kr, { title: "\ubd04\ub0a0", artist: "\ubc29\ud0c4\uc18c\ub144\ub2e8", duration: 200 }).ok, true)
+    assert.equal(acceptCandidate(kr, { title: "\ubd04\ub0a0", artist: "\uc544\uc774\uc720", duration: 200 }).ok, false)
+    // decomposed Hangul compares equal to composed
+    assert.equal(similarity("\u1107\u1169\u11ab", "\ubcf8"), 1)
+} })
+cases.push({ name: "rank: unknown durations are penalized consistently", fn: () => {
+    const lyr = { sync: "line", lines: [{}], plain: "", instrumental: false }
+    const order = ["lrclib", "unison"]
+    const known = rank({ provider: "lrclib", lyrics: lyr, matchedBy: "signature" }, order)
+    const unknown = rank({ provider: "lrclib", lyrics: lyr, matchedBy: "signature", durationUnknown: true }, order)
+    assert.ok(unknown < known)
+    // ...but never enough to outrank a better tier
+    assert.ok(rank({ provider: "unison", lyrics: { sync: "word", lines: [{}], plain: "" }, matchedBy: "signature", durationUnknown: true }, order) > known)
+} })
+cases.push({ name: "splitArtists caps the number of names; huge artist lists are cheap", fn: () => {
+    const many = new Array(5001).join("ab, ")
+    assert.ok(splitArtists(many).length <= 8)
+    const q0 = q({ title: "Some Fairly Long Title", artist: "Artist One, Artist Two & Artist Three" })
+    const bigTitle = new Array(150001).join("ab ")
+    const bigArtist = new Array(100001).join("ab, ")
+    function run() {
+        acceptCandidate(q0, { title: bigTitle, artist: "x", duration: 200 })
+        acceptCandidate(q0, { title: "x", artist: bigArtist, duration: 200 })
+        acceptCandidate(q0, { title: "x", artist: bigTitle, duration: 200 })
+        artistOverlap(splitArtists(bigArtist), splitArtists(bigArtist))
+    }
+    let t0 = Date.now()
+    run()
+    let dt = Date.now() - t0
+    if (dt > 50) {
+        t0 = Date.now()
+        run()
+        dt = Date.now() - t0
+    }
+    assert.ok(dt <= 50, "hostile candidates took " + dt + " ms")
+} })
+cases.push({ name: "similarity: very different lengths are rejected without computing a distance", fn: () => {
+    assert.equal(similarity("ab", "abcdefghijklmnopqrstuvwxyz"), 0)
+    assert.ok(similarity("abcd", "abce") > 0.7)
+} })

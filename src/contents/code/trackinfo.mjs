@@ -6,14 +6,22 @@
 // read only from an `i.ytimg.com/vi/<11 chars>/` cover URL.
 
 import { normalizeText, splitArtists, stripTitleDecorations, isDecorationOnly, artistOverlap } from "./match.mjs"
+import { truncateCodePoints } from "./model.mjs"
+import { MAX_META_CHARS } from "./constants.mjs"
 
 const LOCAL_REF = /^(?:[a-z][a-z0-9+.-]*:\/\/|file:|smb:|sftp:|~\/|\/|[a-z]:[\\/]|\\\\)/i
 const BROWSER_IDENTITY = /firefox|chrom|brave|vivaldi|edge|opera|librewolf|zen|browser|youtube|mozilla/i
 const DASH_SPLIT = /\s[-\u2013\u2014]\s/
+const FILE_EXT = /\.(?:mp3|flac|ogg|oga|opus|m4a|wav|aac|wma|webm|mkv|mp4|m4b|aiff?|ape|wv)$/i
+const NUM_PREFIX = /^\d{1,3}\s*[-._)]\s*(?=\S)/
+const NUM_PREFIX_STRICT = /^\d{1,3}\s*[-.)]\s+\S/
+const YT_TAIL = /\s+[-\u2013\u2014|]\s+YouTube(?:\s+Music)?$/i
 const YT_ART = /^https?:\/\/i\.ytimg\.com\/vi\/([A-Za-z0-9_-]{11})\//
 
 function tidy(v) {
-    return String(v === null || v === undefined ? "" : v).replace(/\s+/g, " ").trim()
+    let s = String(v === null || v === undefined ? "" : v)
+    if (s.length > MAX_META_CHARS * 4) s = s.slice(0, MAX_META_CHARS * 4)
+    return truncateCodePoints(s.replace(/\s+/g, " ").trim(), MAX_META_CHARS)
 }
 
 function looksLocal(s) {
@@ -54,8 +62,27 @@ export function clean(meta, cfg) {
     if (looksLocal(artist)) artist = ""
     if (looksLocal(album)) album = ""
 
+    // Untagged local files: the player shows the file name. Never send an extension or a track number.
+    let noisy = false
+    const em = FILE_EXT.exec(title)
+    let hadExt = false
+    if (em && em.index > 0) {
+        title = title.slice(0, em.index)
+        hadExt = true
+    }
+    if (hadExt || (artist === "" && NUM_PREFIX_STRICT.test(title))) {
+        const t2 = title.replace(NUM_PREFIX, "")
+        if (t2 !== "") title = t2
+    }
+    const ym = YT_TAIL.exec(title)
+    if (ym && ym.index > 0) {
+        title = title.slice(0, ym.index)
+        noisy = true
+    }
+
     const ch = stripChannel(artist)
     artist = ch.artist
+    if (ch.channel || BROWSER_IDENTITY.test(identity)) noisy = true
 
     // "Artist - Title" inside the title (browser players, YouTube).
     const dm = DASH_SPLIT.exec(title)
@@ -67,7 +94,10 @@ export function clean(meta, cfg) {
             if (artist === "") {
                 artist = left
                 title = right
+                noisy = true
             } else if (artistOverlap(splitArtists(artist), splitArtists(left)) >= 0.8) {
+                // "TaylorSwiftVEVO" + "Taylor Swift - Song": the left part is the better spelling.
+                if (channelish) artist = left
                 title = right
             } else if (channelish) {
                 artist = left
@@ -88,6 +118,7 @@ export function clean(meta, cfg) {
     return {
         title: title,
         titleAlt: stripTitleDecorations(title),
+        noisy: noisy,
         artist: artist,
         artists: artists,
         primaryArtist: artists.length ? artists[0] : "",
