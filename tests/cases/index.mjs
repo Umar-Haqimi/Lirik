@@ -10,6 +10,10 @@ import { cases as ttml } from "./ttml.cases.mjs"
 import { cases as fuzz } from "./fuzz.cases.mjs"
 import { cases as timeline } from "./timeline.cases.mjs"
 import { cases as clock } from "./clock.cases.mjs"
+import { cases as trackinfo } from "./trackinfo.cases.mjs"
+import { cases as match } from "./match.cases.mjs"
+import { cases as providers } from "./providers.cases.mjs"
+import { cases as resolver } from "./resolver.cases.mjs"
 
 export const suites = [
     ["smoke", smoke],
@@ -22,6 +26,10 @@ export const suites = [
     ["fuzz", fuzz],
     ["timeline", timeline],
     ["clock", clock],
+    ["trackinfo", trackinfo],
+    ["match", match],
+    ["providers", providers],
+    ["resolver", resolver],
 ]
 
 export function allCases() {

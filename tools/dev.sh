@@ -57,6 +57,10 @@ do_policy() {
     if grep -rnE '\basync\b|\bawait\b|\.matchAll\(|\.replaceAll\(|\.flatMap\(|Object\.fromEntries|\\p\{|\(\?<[=!]|\(\?<[a-zA-Z]|globalThis|import\.meta|\?\?=|\|\|=|&&=|\bIntl\b|setTimeout' src/contents/code; then
         die "non-V4 construct in src/contents/code (see docs/DECISIONS.md D2)"
     fi
+    # raw U+2028/U+2029/U+00A0/U+FEFF break V4 module loading; use \uXXXX escapes (docs/PROGRESS.md gotchas)
+    if grep -rnP '\x{2028}|\x{2029}|\x{00A0}|\x{FEFF}' src/contents/code tests/cases 2>/dev/null; then
+        die "raw line/paragraph separator, NBSP or BOM in a .mjs file (use \\uXXXX escapes)"
+    fi
     if grep -rnE '\{\s*\.\.\.' src/contents/code; then
         die "object spread in src/contents/code (V4 cannot parse it)"
     fi
