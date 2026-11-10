@@ -20,6 +20,7 @@ QtObject {
     property real lengthUs: 0
     /// Any change of this string means a new track: the anchor is dropped (clock.report cannot see tracks).
     property string trackKey: ""
+    /// Clamped to OFFSET_MIN_MS..OFFSET_MAX_MS (+-5000) wherever it is used.
     property int globalOffsetMs: 0
     property int trackOffsetMs: 0
     /// True only while playing AND synced lyrics are loaded AND a lyric surface is visible.
@@ -41,6 +42,8 @@ QtObject {
     /// The anchor moved 40-250 ms: timers must be rescheduled, visible state need not reset.
     signal reanchored()
 
+    readonly property int _globalMs: Math.max(C.OFFSET_MIN_MS, Math.min(C.OFFSET_MAX_MS, root.globalOffsetMs))
+
     function _now(): real {
         return root.wallClock ? root.wallClock() : Date.now()
     }
@@ -52,7 +55,7 @@ QtObject {
 
     /// Lyric time in ms at wall time `wallMs` (offsets applied; positive offset = lyrics later).
     function lyricTimeAt(wallMs: real): real {
-        return Clock.lyricTime(Clock.estimate(root.anchor, wallMs), root.globalOffsetMs, root.trackOffsetMs)
+        return Clock.lyricTime(Clock.estimate(root.anchor, wallMs), root._globalMs, root.trackOffsetMs)
     }
 
     function lyricTimeNow(): real {
@@ -61,7 +64,7 @@ QtObject {
 
     /// Player position (microseconds) at which the lyric time `lineStartMs` is heard (inverse offsets).
     function seekTargetUs(lineStartMs: real): real {
-        let us = Clock.msToUs(Clock.trackTime(lineStartMs, root.globalOffsetMs, root.trackOffsetMs))
+        let us = Clock.msToUs(Clock.trackTime(lineStartMs, root._globalMs, root.trackOffsetMs))
         if (us < 0) us = 0
         if (root.lengthUs > 0 && us > root.lengthUs) us = root.lengthUs
         return us
@@ -92,6 +95,8 @@ QtObject {
     onTrackKeyChanged: {
         root.anchor = null
         root._onPosition()
+        // libkmpris only re-polls the position itself when the MPRIS trackid changes: ask for a fresh one
+        root.pollRequested()
     }
     onGlobalOffsetMsChanged: root.discontinuity()
     onTrackOffsetMsChanged: root.discontinuity()

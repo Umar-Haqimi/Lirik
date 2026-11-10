@@ -603,6 +603,13 @@ export const cases = [
         env.advance(200)
         assert.equal(env.resolver.state().status, "synced")
     } },
+    { name: "lyrics off: the cache is never touched (no prefs read, no write)", fn: () => {
+        const env = world({ "lrclib.get": fxr("lrclib-get-line") }, { enabled: false })
+        lookup(env, TRACK, 100)
+        env.resolver.setTrackOffset(200)
+        env.resolver.hideForTrack()
+        assert.equal(env.cache.calls.length, 0)
+    } },
     { name: "hideForTrack persists, skips, and lookUpAnyway undoes it", fn: () => {
         const env = world({ "lrclib.get": fxr("lrclib-get-line") })
         const s = lookup(env, TRACK)

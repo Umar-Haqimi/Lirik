@@ -27,6 +27,7 @@ import { fileURLToPath } from "node:url"
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(HERE, "..")
 const PORT = 47800
+const FAKE_IDENTITY = "Lirik Fake Player"
 const KEEP = process.argv.includes("--keep")
 // Track "Gapped Placeholder" (tools/stub-server.mjs): lines 4.0-9.5 s, 20.0-26.5 s, 38.5-41.5 s.
 const TRACK = path.join(ROOT, "tests", "fixtures", "tracks", "word-gap.json")
@@ -74,8 +75,17 @@ const pkg = path.join(tmp, "pkg")
 fs.cpSync(path.join(ROOT, "src"), pkg, { recursive: true })
 const xmlPath = path.join(pkg, "contents", "config", "main.xml")
 const xml = fs.readFileSync(xmlPath, "utf8")
-const patched = xml.replace(/(<entry name="lyricsDevBaseUrl" type="String">\s*<default>)(<\/default>)/, "$1http://127.0.0.1:" + PORT + "$2")
-if (patched === xml) die("could not patch the lyricsDevBaseUrl default in main.xml (entry not found or already set)")
+// Defaults patched in the copy: the stub origin, and "use only the fake player" (a desktop usually has other
+// MPRIS players, e.g. a browser, that would otherwise win the multiplexer).
+function patchDefault(text, name, type, value) {
+    const re = new RegExp('(<entry name="' + name + '" type="' + type + '">\\s*<default>)[^<]*(</default>)')
+    const out = text.replace(re, "$1" + value + "$2")
+    if (out === text && !re.test(text)) die("could not patch the " + name + " default in main.xml (entry not found)")
+    return out
+}
+let patched = patchDefault(xml, "lyricsDevBaseUrl", "String", "http://127.0.0.1:" + PORT)
+patched = patchDefault(patched, "choosePlayerAutomatically", "Bool", "false")
+patched = patchDefault(patched, "preferredPlayerIdentity", "String", FAKE_IDENTITY) // Identity of tools/fake-player.mjs
 fs.writeFileSync(xmlPath, patched)
 
 // --- processes ------------------------------------------------------------------------------
@@ -111,6 +121,7 @@ if (fake.proc.exitCode !== null) die("fake-player exited early (is another insta
 const viewer = run("plasmoidviewer", "plasmoidviewer", ["-a", pkg, "-f", "horizontal"], {
     QT_QPA_PLATFORM: "offscreen",
     QT_FORCE_STDERR_LOGGING: "1",
+    QT_LOGGING_RULES: "js.debug=true;qml.debug=true", // console.debug() output of the widget
     XDG_CONFIG_HOME: path.join(tmp, "config"),
     XDG_DATA_HOME: path.join(tmp, "data"),
     XDG_CACHE_HOME: path.join(tmp, "cache"),

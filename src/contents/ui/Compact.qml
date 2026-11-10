@@ -230,6 +230,7 @@ Item {
                     textAlignment: songGrid.textAlignment
                     truncateStyle: plasmoid.configuration.compactTruncatedTextStyle
                     opacity: player.playbackStatus === Mpris.PlaybackStatus.Playing ? 1.0 : 0.75
+                    noMediaText: plasmoid.configuration.noMediaText
                     timeline: lyricsTimeline
                     lyricsInPanel: plasmoid.configuration.lyricsEnabled && plasmoid.configuration.lyricsInPanel
                     karaoke: plasmoid.configuration.lyricsKaraokeInPanel

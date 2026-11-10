@@ -155,4 +155,38 @@ TestCase {
         tryCompare(tl, "state", "outro", 3000)
         compare(tl.activeTimers, 0, "stops after the last change")
     }
+
+    function test_small_silent_reanchor_only_reschedules() {
+        make(Data.wordLyrics())
+        clk.t = 5000
+        clk.discontinuity()
+        const serial = tl.frameSerial
+        const before = tl._timer.interval
+        clk.t = 5020 // 20 ms of drift, nothing discrete changed
+        clk.reanchored()
+        compare(tl.frameSerial, serial, "no publish, so the views keep their running animations")
+        compare(tl.activeTimers, 1)
+        verify(tl._timer.interval <= before)
+        clk.t = 5200 // 180 ms: the wipe has to be re-timed
+        clk.reanchored()
+        verify(tl.frameSerial > serial)
+        // a change of a discrete field is always published
+        const s2 = tl.frameSerial
+        clk.t = 5450 // the next word (5400..)
+        clk.reanchored()
+        verify(tl.frameSerial > s2)
+        compare(tl.wordIndex, 2)
+    }
+
+    function test_idle_recompute_is_a_noop() {
+        make(Data.wordLyrics(), { active: false })
+        compare(tl.state, "none")
+        const serial = tl.frameSerial
+        clk.t = 6000
+        clk.discontinuity()
+        clk.reanchored()
+        tl.recompute()
+        compare(tl.frameSerial, serial)
+        compare(tl.activeTimers, 0)
+    }
 }

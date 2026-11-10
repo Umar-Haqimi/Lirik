@@ -146,20 +146,59 @@ QtObject {
             return handle
         }
 
+        // Qt's XHR follows redirects, so the allow-list is enforced again on the URL the response really came from
+        // (`responseURL`). The redirected request itself has already been sent by then: a refused redirect only
+        // stops us from reading or caching what the other host answered. Providers do not redirect off-site.
+        function redirectRefused() {
+            let u = ""
+            try {
+                u = req.responseURL
+            } catch (e) {
+                u = ""
+            }
+            if (typeof u !== "string" || u === "") return false
+            // responseURL comes back percent-DECODED (spaces in the query), so only its origin is checked
+            const m = /^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\/?#]*)/.exec(u)
+            return !m || !root.isAllowed(m[1] + "/")
+        }
+        function refuse(message) {
+            if (done) return
+            const err = new Error(message)
+            abort()
+            cb(err, null)
+        }
+        let lastPartialCheck = 0
+
         req.onreadystatechange = function () {
             if (done) return
-            if (req.readyState === 3) { // LOADING: stop early when the body outgrows the cap
+            if (req.readyState === 2 || req.readyState === 3 || req.readyState === 4) {
+                if (redirectRefused()) {
+                    console.debug("Lirik Http: refused a redirect to a host that is not allowed ")
+                    refuse("redirect to a host that is not allowed")
+                    return
+                }
+            }
+            if (req.readyState === 2) { // HEADERS_RECEIVED: an honest Content-Length settles the cap at once
+                let len = NaN
+                try {
+                    len = parseInt(req.getResponseHeader("Content-Length"), 10)
+                } catch (e) {
+                    len = NaN
+                }
+                if (len > root.maxBodyBytes) refuse("response too large")
+                return
+            }
+            if (req.readyState === 3) { // LOADING: chunked bodies are measured at most every 250 ms, not per chunk
+                const now = Date.now()
+                if (now - lastPartialCheck < 250) return
+                lastPartialCheck = now
                 let partial = ""
                 try {
                     partial = req.responseText
                 } catch (e) {
                     partial = ""
                 }
-                if (typeof partial === "string" && root.tooBig(partial)) {
-                    const err = new Error("response too large")
-                    abort()
-                    cb(err, null)
-                }
+                if (typeof partial === "string" && root.tooBig(partial)) refuse("response too large")
                 return
             }
             if (req.readyState !== 4) return

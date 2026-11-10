@@ -55,6 +55,11 @@ QtObject {
     readonly property int activeTimers: root._timer.running ? 1 : 0
 
     property bool _ready: false
+    /// Wall time (Date.now) the published frame was computed at (drift check for silent re-anchors).
+    property real _frameWall: 0
+    /// A silent re-anchor that moved the estimate by less than this, with every discrete field unchanged, only
+    /// reschedules the timer: no publish, no frameSerial bump, so the views keep their running animations.
+    readonly property real softDriftMs: 40
 
     function _wordRemaining(line: var, f: var, t: real): real {
         if (!line || f.wordIndex < 0 || !line.words || f.wordIndex >= line.words.length) return 0
@@ -63,9 +68,27 @@ QtObject {
         return end > t ? (end - t) / (root.rate > 0 ? root.rate : 1) : 0
     }
 
-    function recompute(): void {
+    function _sameActive(a: var, b: var): bool {
+        if (a.length !== b.length) return false
+        for (let i = 0; i < a.length; i++) {
+            if (a[i] !== b[i]) return false
+        }
+        return true
+    }
+
+    function _arm(f: var, t: real): void {
+        if (!root.playing) return
+        const ms = Clock.msUntil(f.nextChangeAt, t, root.rate, true)
+        if (ms < 0) return
+        root._timer.interval = Math.max(1, ms)
+        root._timer.start()
+    }
+
+    /// `soft` (silent re-anchors): publish only when something visible changed.
+    function recompute(soft: var): void {
         if (!root._ready) return
         root._timer.stop()
+        if (!root.active && root.state === "none" && root.primaryLine === null) return // already idle
         const c = root.clock
         const ly = root.lyrics
         let f
@@ -75,6 +98,16 @@ QtObject {
             f = Tl.frame(ly, t, { gapThresholdMs: root.gapThresholdMs, lingerMs: root.lingerMs, leadInMs: root.leadInMs })
         } else {
             f = Tl.frame(null, 0, null)
+        }
+        if (soft === true && root.active && ly && c && f.state === root.state && f.primary === root.primary
+                && f.upcoming === root.upcoming && f.last === root.last && f.wordIndex === root.wordIndex
+                && root._sameActive(f.active, root.activeLines)) {
+            const expected = root.frameTimeMs + (root.playing ? (Date.now() - root._frameWall) * root.rate : 0)
+            if (Math.abs(t - expected) < root.softDriftMs) {
+                root.nextChangeAt = f.nextChangeAt
+                root._arm(f, t)
+                return
+            }
         }
         const lines = ly ? ly.lines : null
         const pl = lines && f.primary >= 0 ? lines[f.primary] : null
@@ -93,12 +126,9 @@ QtObject {
         root.nextChangeAt = f.nextChangeAt
         root.primaryLine = pl
         root.lastLine = lines && f.last >= 0 ? lines[f.last] : null
+        root._frameWall = Date.now()
         root.frameSerial = root.frameSerial + 1
-        if (!root.playing) return
-        const ms = Clock.msUntil(f.nextChangeAt, t, root.rate, true)
-        if (ms < 0) return
-        root._timer.interval = Math.max(1, ms)
-        root._timer.start()
+        root._arm(f, t)
     }
 
     onLyricsChanged: root.recompute()
@@ -112,14 +142,14 @@ QtObject {
 
     readonly property Timer _timer: Timer {
         repeat: false
-        onTriggered: root.recompute()
+        onTriggered: root.recompute(false)
     }
 
     readonly property Connections _conn: Connections {
         target: root.clock
         ignoreUnknownSignals: true
         function onDiscontinuity() { root.recompute() }
-        function onReanchored() { root.recompute() }
+        function onReanchored() { root.recompute(true) }
     }
 
     Component.onCompleted: {
