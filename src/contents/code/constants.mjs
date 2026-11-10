@@ -1,5 +1,85 @@
 // Every tunable number in one place (SPEC §5). Pure module: no Qt, no timers, no network.
+// Must stay inside the V4 subset (docs/DECISIONS.md D2).
 
 export const LIRIK_VERSION = "0.1.0"
 export const LIRIK_REPO_URL = "https://github.com/Umar-Haqimi/lirik"
 export const USER_AGENT = "Lirik/" + LIRIK_VERSION + " (" + LIRIK_REPO_URL + ")"
+
+// --- Timeline (SPEC §4.1) ---------------------------------------------------
+export const GAP_THRESHOLD_MS = 8000 // default; user range 3–30 s
+export const GAP_THRESHOLD_MIN_S = 3
+export const GAP_THRESHOLD_MAX_S = 30
+export const LINGER_MS = 1500
+export const LEAD_IN_MS = 300
+
+// Effective end of a line without an end time:
+// min(next.start, start + clamp(base + perWord × wordCount, min, max))
+export const EFFECTIVE_END_BASE_MS = 1200
+export const EFFECTIVE_END_PER_WORD_MS = 350
+export const EFFECTIVE_END_MIN_MS = 2500
+export const EFFECTIVE_END_MAX_MS = 10000
+// The last word of a line with no known end lasts at least this long.
+export const LAST_WORD_MIN_MS = 400
+
+// --- Untrusted input caps (SPEC §6) -----------------------------------------
+export const MAX_BODY_BYTES = 1048576
+export const MAX_LINES = 2000
+export const MAX_WORDS_PER_LINE = 200
+export const MAX_LINE_CHARS = 500
+export const MAX_XML_DEPTH = 32
+export const MAX_YAML_DEPTH = 8
+
+// --- Clock (SPEC §5) --------------------------------------------------------
+export const CLOCK_POLL_MS = 1000
+export const CLOCK_DISCONTINUITY_MS = 250
+export const CLOCK_SILENT_MIN_MS = 40
+export const OFFSET_MIN_MS = -5000
+export const OFFSET_MAX_MS = 5000
+export const OFFSET_STEP_MS = 100
+export const OFFSET_STEP_LARGE_MS = 500
+
+// --- Lookup (SPEC §5) -------------------------------------------------------
+export const DEBOUNCE_MS = 500
+export const SWAP_WINDOW_MS = 2500
+export const HTTP_TIMEOUT_MS = 10000
+export const RETRY_JITTER_FRACTION = 0.3
+export const DEFAULT_RETRY_AFTER_S = 5
+export const LOOKUP_PENDING_MAX_RETRIES = 3
+export const NOTFOUND_TTL_MS = 6 * 3600 * 1000
+export const FOUND_TTL_MS = 30 * 24 * 3600 * 1000
+export const CACHE_MAX_ENTRIES = 300
+export const CACHE_SCHEMA_V = 1
+export const MAX_ALTERNATES = 4
+
+// Ranking (SPEC §5 step 7)
+export const RANK_TIER = { word: 300, line: 200, none: 100 }
+export const RANK_MATCH = { id: 30, signature: 20, search: 10 }
+export const RANK_PROVIDER_FIRST = 5
+export const RANK_CONFIDENCE = { high: 3, medium: 1, low: 0 }
+
+// Search acceptance (SPEC §5 step 8)
+export const MATCH_TITLE_MIN = 0.85
+export const MATCH_ARTIST_MIN = 0.6
+export const MATCH_MAX_DURATION_DIFF_S = 10
+export const MATCH_DURATION_SCORES = [[2, 1.0], [5, 0.7], [10, 0.3]]
+
+// Skip rules defaults (config may override)
+export const MIN_TRACK_S = 30
+export const MAX_TRACK_S = 900
+
+// --- UI (SPEC §4) -----------------------------------------------------------
+export const LOADING_DELAY_MS = 400
+export const FOLLOW_RESUME_MS = 4000
+export const SCROLL_ANCHOR = 0.38
+export const UNSUNG_OPACITY = 0.55
+export const PAUSED_OPACITY = 0.75
+export const LINE_OPACITY_ACTIVE = 1.0
+export const LINE_OPACITY_UPCOMING = 0.6
+export const LINE_OPACITY_PAST = 0.4
+export const SIDE_PANEL_MIN_HEIGHT = 320
+
+// --- Providers --------------------------------------------------------------
+export const LRCLIB_BASE = "https://lrclib.net"
+export const UNISON_BASE = "https://unison.betterlyrics.org"
+export const ALLOWED_HOSTS = ["lrclib.net", "unison.betterlyrics.org"]
+export const PROVIDER_NAMES = ["lrclib", "unison"]

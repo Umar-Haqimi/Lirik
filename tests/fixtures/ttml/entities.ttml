@@ -1,0 +1,1 @@
+<tt xmlns="http://www.w3.org/ns/ttml" xml:lang="en"><body><div><p begin="1.000" end="2.000"><span begin="1.000" end="1.500">rock&amp;roll</span> <span begin="1.500" end="2.000">&lt;img src=x&gt;</span></p><p begin="3.000" end="4.000">&quot;quoted&quot; &apos;single&apos; &#233;&#x00E9; caf&eacute;</p></div></body></tt>

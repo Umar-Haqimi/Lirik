@@ -1,0 +1,24 @@
+version: '1.0'
+
+metadata:
+  title: 'Two Placeholders'
+  artist: 'Example Duo'
+  language: 'en'
+
+lines:
+  - text: 'I will vela the rio'
+    start_ms: 10000
+    end_ms: 15000
+  - text: 'Vela the rio home'
+    start_ms: 12500
+    end_ms: 16500
+  - text: 'Same start a'
+    start_ms: 20000
+    end_ms: 22000
+  - text: 'Same start b'
+    start_ms: 20000
+    end_ms: 23000
+
+plain: |
+  I will vela the rio
+  Vela the rio home

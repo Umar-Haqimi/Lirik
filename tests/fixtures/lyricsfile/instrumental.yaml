@@ -1,0 +1,7 @@
+version: '1.0'
+
+metadata:
+  title: 'Quiet Placeholder'
+  artist: 'Example Ensemble'
+  duration_ms: 240000
+  instrumental: true

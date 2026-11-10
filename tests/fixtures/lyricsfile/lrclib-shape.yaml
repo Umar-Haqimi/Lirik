@@ -1,0 +1,25 @@
+version: '1.0'
+metadata:
+  title: Placeholder Title
+  artist: Placeholder Artist
+  album: Placeholder Album
+  duration_ms: 233000
+  instrumental: false
+  language: en
+lines:
+- text: w1 w2 w3
+  start_ms: 17120
+  end_ms: 20410
+  words:
+  - text: 'w1 '
+    start_ms: 17120
+  - text: 'w2 '
+    start_ms: 17500
+  - text: w3
+    start_ms: 18000
+- text: w4 w5
+  start_ms: 20410
+  end_ms: 29600
+plain: |-
+  w1 w2 w3
+  w4 w5

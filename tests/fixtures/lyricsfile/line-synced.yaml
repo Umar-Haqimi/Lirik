@@ -1,0 +1,21 @@
+version: '1.0'
+
+metadata:
+  title: 'City Placeholder'
+  artist: 'Example Artist'
+  duration_ms: 198000
+  language: 'en'
+  instrumental: false
+
+lines:
+  - text: 'Wela for the nara'
+    start_ms: 12400
+    end_ms: 15750
+  - text: 'Mira all the sol change'
+    start_ms: 15800
+    end_ms: 20100
+
+plain: |
+  [Verse]
+  Wela for the nara
+  Mira all the sol change

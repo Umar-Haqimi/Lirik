@@ -1,0 +1,20 @@
+version: '1.0'
+metadata:
+  title: 'No Ends'
+  artist: 'Example Artist'
+lines:
+- text: la lo mira sol
+  start_ms: 1000
+  words:
+  - text: 'la '
+    start_ms: 1000
+  - text: 'lo '
+    start_ms: 1300
+  - text: 'mira '
+    start_ms: 1700
+  - text: sol
+    start_ms: 2100
+- text: second line without end
+  start_ms: 30000
+- text: third close
+  start_ms: 31000

@@ -1,0 +1,57 @@
+# A comment before the document
+version: '1.0'
+metadata:
+  title: "Quote \"torture\" é"   # trailing comment
+  artist: It's plain
+  instrumental: false
+lines:
+- text: 'it''s a lo''s'
+  start_ms: 1000
+  end_ms: 2000
+- text: "tab\there and \\ backslash"
+  start_ms: 2000
+- text: ratio 1:2 and C# major
+  start_ms: 3000
+- text: 1999
+  start_ms: 4000
+- text: 'true'
+  start_ms: 5000
+- text: null
+  start_ms: 5500
+- text: '  padded  '
+  start_ms: 6000
+  words:
+  - text: '  pad'
+    start_ms: 6000
+  - text: 'ded  '
+    start_ms: 6300
+- text: 夜空の星
+  start_ms: 7000
+  words:
+  - text: 夜空
+    start_ms: 7000
+  - text: の
+    start_ms: 7400
+  - text: 星
+    start_ms: 7700
+    end_ms: 8200
+- text: emoji 🎤 ok
+  start_ms: 9000
+- text: "colon: inside quotes # not a comment"
+  start_ms: 10000
+plain: |-
+  first plain line
+  second: with colon
+
+  after blank
+folded: >
+  folded one
+  folded two
+
+  new para
+keep: |+
+  kept
+
+stripped: >-
+  a
+  b

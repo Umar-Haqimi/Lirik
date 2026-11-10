@@ -1,0 +1,6 @@
+version: '1.0'
+metadata:
+  title: 'No Lines Placeholder'
+  artist: 'Example Artist'
+plain: |
+  only plain here

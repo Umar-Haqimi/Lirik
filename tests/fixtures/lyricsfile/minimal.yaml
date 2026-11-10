@@ -1,0 +1,9 @@
+version: '1.0'
+
+metadata:
+  title: 'Morning Placeholder'
+  artist: 'Example Artist'
+
+plain: |
+  la lo mira sol
+  vena tarum

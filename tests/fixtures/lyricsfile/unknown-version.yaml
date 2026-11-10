@@ -1,0 +1,7 @@
+version: '2.0'
+metadata:
+  title: 'Future Placeholder'
+  artist: 'Example Artist'
+lines:
+  - text: 'la la'
+    start_ms: 1000
