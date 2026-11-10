@@ -16,7 +16,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-QT6BIN=/usr/lib/qt6/bin
+QT6BIN="${QT6BIN:-/usr/lib/qt6/bin}"   # override for a non-system Qt (e.g. an aqtinstall tree)
 export QT_FORCE_STDERR_LOGGING=1   # Qt logs to journald otherwise (docs/DECISIONS.md D1)
 OFFSCREEN="env QT_QPA_PLATFORM=offscreen"
 
@@ -106,10 +106,10 @@ do_lint() {
 
 do_node() {
     step "node --test"
-    node --test tests/node/ 2>&1 | tail -n 9 > /tmp/lirik-node-$$.txt || { cat /tmp/lirik-node-$$.txt; node --test tests/node/ 2>&1 | grep -B2 -A20 'not ok' | head -80; rm -f /tmp/lirik-node-$$.txt; die "node tests"; }
+    node --test --test-reporter=tap "tests/node/**/*.test.mjs" 2>&1 | tail -n 9 > /tmp/lirik-node-$$.txt || { cat /tmp/lirik-node-$$.txt; node --test "tests/node/**/*.test.mjs" 2>&1 | grep -B2 -A20 'not ok' | head -80; rm -f /tmp/lirik-node-$$.txt; die "node tests"; }
     local pass fail
-    pass=$(grep -E '^ℹ pass' /tmp/lirik-node-$$.txt | awk '{print $3}')
-    fail=$(grep -E '^ℹ fail' /tmp/lirik-node-$$.txt | awk '{print $3}')
+    pass=$(grep -E '^# pass' /tmp/lirik-node-$$.txt | awk '{print $3}')
+    fail=$(grep -E '^# fail' /tmp/lirik-node-$$.txt | awk '{print $3}')
     rm -f /tmp/lirik-node-$$.txt
     [ "$fail" = "0" ] || die "node tests: $fail failed"
     ok "node --test: $pass passed"
@@ -146,6 +146,10 @@ trap cleanup_bg EXIT
 
 do_smoke() {
     step "smoke: offscreen plasmoidviewer + fake player (20 s)"
+    if ! command -v plasmoidviewer >/dev/null 2>&1; then
+        echo "${c_red}! SKIPPED smoke: plasmoidviewer not installed (no Plasma 6 on this machine)${c_off}"
+        return 0
+    fi
     mkdir -p .local/smoke
     node tools/fake-player.mjs --name lirikfake --autoplay tests/fixtures/tracks/smoke.json < /dev/null > .local/smoke/fake.log 2>&1 &
     FAKE_PID=$!
