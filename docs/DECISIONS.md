@@ -132,8 +132,10 @@ polls once a second.
 - `org.kde.plasma.workspace.dbus` exists (`/usr/lib/qt6/qml/org/kde/plasma/workspace/dbus`) and
   imports (`typeof DBus.SessionBus === "object"`). Relevant only for N1.
 - Breeze has `view-media-lyrics` (16/22/24 px, plus `-symbolic`). **Decision:** use it; fallback
-  `amarok_lyrics` then `view-media-track` for non-Breeze themes (Kirigami `Icon` falls back by name
-  list).
+  `amarok_lyrics` then `view-media-track` for non-Breeze themes. **Correction (M6 review):** `Kirigami.Icon`
+  does *not* fall back by name list — `fallback` is a single string (kirigami `icon.h:81-90`), so the toggle
+  stacks two icons: A = `view-media-lyrics` (no fallback); when `A.status === Kirigami.Icon.Error`, B =
+  `amarok_lyrics` with `fallback: "view-media-track"`.
 
 ## D10. LRCLIB samples (captured 2026-11-10, scrubbed into `tests/fixtures/api/`)
 
@@ -371,3 +373,32 @@ checked our Kirigami / libkmpris usage against the real KDE sources — no API m
   stubs cannot provide — the Full.qml toggle button is covered by lint only until the desktop smoke run.
 - **i18n in tests**: lyric components use `i18n()` with `// qmllint disable unqualified`; tests and harnesses
   define `i18n`/`i18nc` themselves, never shipped code.
+
+## D19. Config page, engine and polish (M7)
+
+- **LyricsEngine** (`ui/lyrics/LyricsEngine.qml`) holds controller + clock + timeline; it takes `player` and the
+  config values as inputs. `main.qml` computes surface visibility (form factor, `expanded`,
+  `songTextInPanel`) and keeps `lyricsController`, `playbackClock`, `lyricsTimeline` as root properties, so
+  `Compact.qml`/`FullWithLyrics.qml` are unchanged. Polls are forwarded to `player.updatePosition()` only
+  while lyrics are on and a surface is visible. Tested with a fake player that mimics libkmpris (position not
+  live, notifies only on change, async `setPosition`).
+- **Panel surface** also requires `songTextInPanel`: no lyric work while the text slot is hidden.
+- **Config page** `ui/config/Lyrics.qml` (fourth category, icon `view-media-lyrics`): the five §4.3 sections,
+  exact privacy sentence and offset hint, dependent controls disabled when lyrics are off. Providers are two
+  checkboxes + "Ask Unison first" composed into the `lyricsProviders` string (empty = `no-providers` skip, with a
+  warning). `lyricsDevBaseUrl` and `lyricsSidePanelLastSide` have no UI. Count / Clear cache use LocalStorage
+  directly (DB `lirik`, version `1`, `lyrics_cache` only, prefs kept): the config dialog runs in the same
+  plasmashell process with its own engine, and the offline-storage path depends on the application, so both
+  open the same SQLite file (unverified on the desktop; the page shows 0 on failure).
+- **Tooltip line**: "Lyrics: <provider> (word-synced | line-synced | unsynced)" from the lookup status (not
+  per-line), only while panel lyrics are on.
+- **Animations off**: Plasma clamps Kirigami durations to ≥ 1 ms when animations are disabled (libplasma
+  `kirigamiplasmastyle/units.cpp:41-50`), so "off" is tested as `longDuration <= 1` (KDE's own convention).
+  With animations off the karaoke wipe and the long-line pan jump at word changes (the wipe is content, not
+  decoration), gap dots are static, crossfades are instant.
+- **i18n**: `bin/i18n extract` refreshed `template.pot` (msgmerge added untranslated entries to the `.po` files);
+  no `qsTr` in Lirik files.
+- **Performance**: `tools/perf.sh` (desktop only) samples plasmoidviewer CPU from `/proc/<pid>/stat` for 35 s
+  word-syncing and 25 s paused (budget < 2 % / ≤ 0.5 % of one core). In the container a proxy test counts work:
+  over a simulated minute, frame bumps ≈ word/line changes (83 vs 84 expected) plus 1 poll/s, and 0 while
+  paused.
