@@ -21,3 +21,10 @@ not stub-tested.
 What the stubs cannot verify: real theming and colour sets, real sizes (Units are fixed numbers),
 Plasma component styling and behaviour (Menu placement, ToolTip timing, ...), and that the names used
 actually exist in Plasma. Anything that depends on those needs the real `plasmoidviewer` smoke run.
+
+## Qt5Compat.GraphicalEffects
+
+Upstream's `ScrollingText` and `Compact.qml` import `Qt5Compat.GraphicalEffects`, which the cloud container
+does not have either. `Qt5Compat/GraphicalEffects` here is a pair of inert items (`OpacityMask`, `LinearGradient`)
+so `SongAndArtistText` loads. An item with `layer.effect` set to the stub renders nothing, so the tests and
+snapshots use short titles or `truncateStyle` Elide/None, never an overflowing FadeOut title.

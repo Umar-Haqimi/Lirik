@@ -1,4 +1,5 @@
 import "./components"
+import "./lyrics"
 import QtQuick
 import QtQuick.Layouts
 import Qt5Compat.GraphicalEffects
@@ -189,7 +190,7 @@ Item {
                 Layout.preferredWidth: horizontal ? songAndArtistText.width : null
                 Layout.alignment: Qt.AlignVCenter | Qt.AlignHCenter
 
-                SongAndArtistText {
+                CompactLyrics {
                     id: songAndArtistText
 
                     anchors.centerIn: parent
@@ -229,6 +230,11 @@ Item {
                     textAlignment: songGrid.textAlignment
                     truncateStyle: plasmoid.configuration.compactTruncatedTextStyle
                     opacity: player.playbackStatus === Mpris.PlaybackStatus.Playing ? 1.0 : 0.75
+                    timeline: lyricsTimeline
+                    lyricsInPanel: plasmoid.configuration.lyricsEnabled && plasmoid.configuration.lyricsInPanel
+                    karaoke: plasmoid.configuration.lyricsKaraokeInPanel
+                    titleDuringGaps: plasmoid.configuration.lyricsPanelTitleDuringGaps
+                    playing: player.playbackStatus === Mpris.PlaybackStatus.Playing
                 }
             }
 

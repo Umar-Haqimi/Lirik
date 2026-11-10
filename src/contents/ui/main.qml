@@ -5,6 +5,7 @@ import org.kde.plasma.plasmoid
 import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.private.mpris as Mpris
+import "./lyrics"
 
 
 PlasmoidItem {
@@ -52,6 +53,60 @@ PlasmoidItem {
             console.debug(`Player ready changed: ${player.ready} -> plasmoid status changed: ${Plasmoid.status}`)
         }
 
+    }
+
+    // --- Lirik: lyrics engine, playback clock and frame scheduler ---
+    // The compact representation is a lyric surface when panel lyrics are on and the panel is horizontal.
+    readonly property bool lyricsSurfaceCompact: plasmoid.configuration.lyricsEnabled && plasmoid.configuration.lyricsInPanel
+        && formFactor === PlasmaCore.Types.Horizontal
+    // The full view (M6) ORs its expanded state in here.
+    property bool lyricsSurfaceFull: false
+    readonly property bool lyricSurfaceVisible: lyricsSurfaceCompact || lyricsSurfaceFull
+
+    LyricsController {
+        id: lyricsController
+
+        hasMedia: player.ready
+        trackTitle: player.title
+        trackArtist: player.artists
+        trackAlbum: player.album
+        trackLengthUs: player.songLength
+        trackArtUrl: player.artUrl
+        playerIdentity: player.identity
+        enabled: plasmoid.configuration.lyricsEnabled
+        providers: plasmoid.configuration.lyricsProviders
+        minTrackS: plasmoid.configuration.lyricsMinTrackSec
+        maxTrackS: plasmoid.configuration.lyricsMaxTrackSec
+        excludedPlayers: plasmoid.configuration.lyricsExcludedPlayers
+        cacheEnabled: plasmoid.configuration.lyricsCacheEnabled
+        devBaseUrl: plasmoid.configuration.lyricsDevBaseUrl
+    }
+
+    PlaybackClock {
+        id: playbackClock
+
+        readonly property bool isPlaying: player.playbackStatus === Mpris.PlaybackStatus.Playing
+
+        positionUs: player.songPosition
+        rate: player.rate
+        playing: isPlaying
+        lengthUs: player.songLength
+        trackKey: lyricsController.trackKey
+        globalOffsetMs: plasmoid.configuration.lyricsGlobalOffsetMs
+        trackOffsetMs: lyricsController.offsetMs
+        pollEnabled: isPlaying && lyricsController.syncKind !== "none" && widget.lyricSurfaceVisible
+
+        onPollRequested: player.updatePosition()
+    }
+
+    LyricsTimeline {
+        id: lyricsTimeline
+
+        lyrics: lyricsController.lyrics
+        clock: playbackClock
+        playing: playbackClock.isPlaying
+        active: widget.lyricSurfaceVisible && lyricsController.syncKind !== "none"
+        gapThresholdMs: Math.max(3, Math.min(30, plasmoid.configuration.lyricsGapThresholdSec)) * 1000
     }
 
     compactRepresentation: Compact {}
