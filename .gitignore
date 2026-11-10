@@ -5,7 +5,7 @@ src/contents/locale
 # Lirik
 .refs/
 .local/
-node_modules/
+node_modules
 tests/snapshots/out/
 *.plasmoid
 
