@@ -5,16 +5,19 @@
             {
                 "Email": "catterina.claudio@gmail.com",
                 "Name": "Claudio Catterina"
+            },
+            {
+                "Name": "Umar Haqimi"
             }
         ],
-        "Description": "Show currently playing song information and provide playback controls",
-        "BugReportUrl": "https://github.com/ccatterina/plasmusic-toolbar/issues",
-        "Website": "https://github.com/ccatterina/plasmusic-toolbar",
-        "Icon": "view-media-track",
-        "Id": "plasmusic-toolbar",
+        "Description": "Now playing, playback controls and time-synced lyrics (a fork of PlasMusic Toolbar)",
+        "BugReportUrl": "https://github.com/Umar-Haqimi/lirik/issues",
+        "Website": "https://github.com/Umar-Haqimi/lirik",
+        "Icon": "view-media-lyrics",
+        "Id": "my.umarh.lirik",
         "License": "GPL3",
-        "Name": "PlasMusic Toolbar",
-        "Version": "4.3.1",
+        "Name": "Lirik",
+        "Version": "0.1.0",
         "Category": "Multimedia"
     },
     "X-Plasma-API-Minimum-Version": "6.0.4",
@@ -22,4 +25,3 @@
         "org.kde.plasma.multimediacontrols"
     ]
 }
-
