@@ -450,3 +450,21 @@ to the wrong server. Fixes:
   `process.ppid`); e2e/perf clean up on exit, SIGINT, SIGTERM and SIGHUP; `dev.sh` traps INT/TERM/HUP too.
 - Verified in the container with impostor servers squatting on 47800 and 47801: 192/192 QML tests pass, no skips,
   nothing left running.
+
+## D22. Side panel follow vs. Kirigami.WheelHandler (second desktop run)
+
+Two `tst_lyricspanel` tests failed only against the real Kirigami. The real `WheelHandler` takes wheel events
+before the Flickable, emits `wheel`, then scrolls `contentY` itself — with a smooth `QPropertyAnimation` when
+KDE smooth scrolling is on (kirigami `src/wheelhandler.cpp:588-622, 715-770`) — and never flicks. The old stub was
+inert, so the Flickable flicked and its momentum kept the panel suspended, which the tests relied on.
+
+- **Real bug**: clicking "Resume" while the wheel's smooth-scroll animation still ran let it overwrite our
+  follow scroll (the line ended one wheel step, 60 px, off the anchor). `resume()` now re-checks the follow
+  target once more after `2 × longDuration + 50 ms` (`followNow` is idempotent). Measured: 60 px off without,
+  < 5 px with.
+- **Stub fidelity**: the stub `WheelHandler` now attaches a QtQuick `WheelHandler` to its target, emits `wheel`,
+  and scrolls `contentY` with a 200 ms OutCubic animation — no flick. It reproduced both desktop failures
+  exactly (same test lines) before the fix.
+- **Tests**: no reliance on flick momentum; the suspend check uses an explicit timeout and verifies the view
+  does not move while suspended; anchor checks use `tryVerify` instead of fixed waits (robust to slower
+  animation settings).

@@ -83,21 +83,26 @@ TestCase {
         compare(panel.following, true)
         compare(child("resumePill").visible, false)
 
-        // manual scroll (wheel)
+        // manual scroll (wheel). The real Kirigami.WheelHandler scrolls without a flick (no momentum keeps the
+        // panel suspended), so the resume timeout is set explicitly here instead of relying on flick motion.
+        panel.resumeDelayMs = 1500
         mouseWheel(lv, 100, 100, 0, -120)
         verify(!panel.following)
         compare(child("resumePill").visible, true)
+        wait(400) // let a smooth-scroll animation (real WheelHandler) settle
         const y1 = lv.contentY
         // a frame change while suspended does not scroll
         frame("line", 14, 14, 15)
-        wait(600)
+        wait(300)
         verify(!panel.following)
-        // resumes after the timeout (300 ms in this test) without interaction
-        tryVerify(function () { return panel.following }, 2000)
+        verify(Math.abs(lv.contentY - y1) < 1, "scrolled while suspended: " + y1 + " -> " + lv.contentY)
+        // resumes after the timeout without interaction
+        tryVerify(function () { return panel.following }, 4000)
         compare(child("resumePill").visible, false)
-        wait(700)
-        const it14 = lv.itemAtIndex(14)
-        verify(Math.abs(it14.y + it14.height / 2 - lv.contentY - lv.height * 0.38) < 6)
+        tryVerify(function () {
+            const t = lv.itemAtIndex(14)
+            return t !== null && Math.abs(t.y + t.height / 2 - lv.contentY - lv.height * 0.38) < 6
+        }, 3000, "line 14 at the anchor")
     }
 
     function test_pill_click_resumes() {
@@ -110,9 +115,11 @@ TestCase {
         verify(!panel.following)
         mouseClick(child("resumePill"))
         verify(panel.following)
-        wait(700)
-        const it = panel.listView.itemAtIndex(5)
-        verify(Math.abs(it.y + it.height / 2 - panel.listView.contentY - panel.listView.height * 0.38) < 6)
+        // lands on the anchor even if a smooth-scroll animation from the wheel was still running
+        tryVerify(function () {
+            const it = panel.listView.itemAtIndex(5)
+            return it !== null && Math.abs(it.y + it.height / 2 - panel.listView.contentY - panel.listView.height * 0.38) < 6
+        }, 3000, "line 5 at the anchor after resume")
     }
 
     function test_keyboard_scroll_suspends() {

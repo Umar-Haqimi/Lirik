@@ -241,6 +241,9 @@ Item {
         resumeTimer.stop()
         root._following = true
         root._queueFollow()
+        // Kirigami.WheelHandler smooth-scrolls contentY with its own animation; if the user resumes while it
+        // still runs, it can overwrite our follow scroll. Re-check once it has settled (followNow is idempotent).
+        settleTimer.restart()
     }
 
     /// Seek to a line and keep it in view until the timeline catches up.
@@ -269,6 +272,13 @@ Item {
         root._following = true
         lv.contentY = lv.originY
         root._queueJump()
+    }
+
+    Timer {
+        id: settleTimer
+        interval: Kirigami.Units.longDuration * 2 + 50
+        repeat: false
+        onTriggered: root.followNow(true)
     }
 
     Timer {
