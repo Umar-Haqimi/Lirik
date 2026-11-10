@@ -325,3 +325,49 @@ headers. Choices (several came from an Opus review of the first version):
   a probe-verified YouTube video id.
 - **Fixtures**: `tools/scrub.mjs` also blanks TTML `<composer:meta value>` metadata (artists, album, ISRC,
   songwriters); the two affected committed fixtures were patched.
+
+## D18. Panel and side panel (M5, M6)
+
+Component APIs are documented in the file headers under `ui/lyrics/`. Choices (some from an Opus review that
+checked our Kirigami / libkmpris usage against the real KDE sources — no API mismatch found):
+
+- **Paused**: the panel's 0.75 opacity stays upstream Compact.qml's own binding; CompactLyrics only stays on the
+  line, freezes the wipe and never jumps back to the title.
+- **Karaoke wipe**: two clipped copies of the line split at `wipeX` (no pixel painted twice); word x-offsets from
+  one shared `TextMetrics`, measured only at word changes. A word-synced long line centre-locks the wipe once it
+  passes half the slot (stays in the middle 60%); line-synced or karaoke-off lines pan linearly over the line.
+- **Slot width** animates only inside a one-shot window after a title↔lyric switch (trap 11); the title marquee
+  pauses while a lyric line is shown. Vertical panels (rotation ≠ 0) stay in title mode (N6).
+- **Clock wiring**: status/rate changes re-anchor from the clock's own estimate (not the stale
+  `player.songPosition`); offset changes emit `discontinuity`; a track change also requests a fresh position;
+  the global offset is clamped to ±5000 inside the clock.
+- **Timeline perf**: a silent re-anchor whose discrete fields are unchanged and drift < 40 ms only re-arms the
+  timer (no publish, no `frameSerial` bump, animations untouched) — upstream's 200 ms position poll in the Full
+  view would otherwise restart animations 5×/s. An inactive timeline in state `none` returns early.
+- **Controller**: `_onUpdate` assigns lyrics/metadata first and `trackKey` last, so the anchor reset never
+  recomputes old lyrics at the new position. `errorCode`/`errorText` are i18n-free codes (`network`, `timeout`,
+  `http`); the views produce translated copy. `resolver.dispose()` runs on destruction. A cache that failed once
+  is ignored for the session.
+- **Lyrics off = no side effects**: with `lyricsEnabled = false` the resolver never touches the cache (no prefs, no
+  rows), so the SQLite DB is not even created. `LyricsCache.enabled` follows the master switch; per-track prefs
+  persist even with `lyricsCacheEnabled = false`.
+- **Redirects**: Qt's XHR follows redirects; `Http.qml` re-checks the origin of `responseURL` (Qt returns it
+  percent-decoded, so only the origin is compared) at readyState 2/3/4 and refuses foreign hosts. The redirected
+  request itself has already been sent; we only refuse to read or cache it. `Content-Length` over 1 MB is
+  rejected at HEADERS_RECEIVED; chunked bodies are measured at most every 250 ms.
+- **Side panel**: property `frameState` (not `state`, which clashes with `Item.state`). Header/footer spacers of
+  38 %/62 % of the viewport let the first/last line reach the scroll anchor; gap follows the dots under `last`,
+  intro follows `upcoming`, outro `last`. Following is suspended on `movementStarted`, key scrolling and scroll
+  bar drags; `resume()` cancels flick momentum. The active line's words are packed into rows by hand (Flow
+  cannot centre rows); syllable runs never split across a wrap; only the primary line wipes. Gap dots stop when
+  paused, hidden, or when animations are off (`Units.longDuration == 0`).
+- **Footer**: shown for synced/plain/instrumental; the offset control only for synced. Shift-click is detected
+  with passive `PointHandler`s. Credit links open only when the URL is exactly `https://lrclib.net` or
+  `https://unison.betterlyrics.org` (or a path under them); otherwise the credit is plain text. A provider
+  cooldown during `tryNextMatch` shows a small "busy, retrying in N s" notice above the lyrics.
+- **FullWithLyrics** lives in `ui/lyrics/` and reaches upstream `Full` via `import ".."`; Right uses
+  `layoutDirection: RightToLeft`; a 1 px separator; desktop minimum panel width 200. Tests load it with a
+  stand-in `Full.qml` (`tests/fwl/`), because the real Full.qml assigns `Kirigami.Theme` attached properties the
+  stubs cannot provide — the Full.qml toggle button is covered by lint only until the desktop smoke run.
+- **i18n in tests**: lyric components use `i18n()` with `// qmllint disable unqualified`; tests and harnesses
+  define `i18n`/`i18nc` themselves, never shipped code.
