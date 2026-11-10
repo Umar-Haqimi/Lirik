@@ -28,11 +28,13 @@ function genLyrics(r, overlap) {
         const start = overlap ? Math.max(0, cursor - r.int(0, 3000)) : cursor
         const dur = r.int(1, 6000)
         const line = { start: start, text: "l" + i }
-        if (r.int(0, 9) < 6) line.end = start + dur
+        const kind = r.int(0, 9)
+        if (kind === 0) line.end = start // zero-length line
+        else if (kind < 6) line.end = start + dur
         if (r.int(0, 1) === 1) {
             const k = r.int(1, 5)
             const words = []
-            let ws = start
+            let ws = r.int(0, 4) === 0 ? Math.max(0, start - r.int(0, 500)) : start
             for (let w = 0; w < k; w++) {
                 const word = { start: ws, text: "w" + w + " " }
                 if (r.int(0, 2) > 0) word.end = ws + r.int(0, 800)
@@ -187,7 +189,7 @@ export const cases = [
         f = frame(L, 9000)
         assert.deepEqual(f.active, [])
         assert.equal(f.state, "line")
-        assert.equal(f.primary, 2)
+        assert.equal(f.primary, 0, "line 0 ended last")
     } },
     { name: "timeline: lines sharing a start become active together, highest index primary", fn: () => {
         const L = mk([
@@ -205,7 +207,7 @@ export const cases = [
         assert.equal(f.last, 1)
         assert.equal(f.upcoming, 2)
     } },
-    { name: "timeline: a long line spanning a later short one keeps the gap measured from the longest end", fn: () => {
+    { name: "timeline: silence after overlaps keeps the line that ended last as primary", fn: () => {
         const L = mk([
             { start: 0, end: 20000, text: "long" },
             { start: 1000, end: 2000, text: "short" },
@@ -213,9 +215,116 @@ export const cases = [
         ])
         assert.equal(frame(L, 15000).state, "line")
         assert.deepEqual(frame(L, 15000).active, [0])
-        assert.equal(frame(L, 15000).primary, 0)
-        assert.equal(frame(L, 21499).state, "line")
+        assert.equal(frame(L, 19999).primary, 0)
+        for (let t = 20000; t < 21500; t += 250) {
+            const f = frame(L, t)
+            assert.equal(f.state, "line")
+            assert.deepEqual(f.active, [])
+            assert.equal(f.primary, 0, "primary stays on the long line at " + t)
+        }
         assert.equal(frame(L, 21500).state, "gap")
+        const S = mk([
+            { start: 0, end: 20000, text: "long" },
+            { start: 1000, end: 2000, text: "short" },
+            { start: 23000, end: 24000, text: "next" },
+        ])
+        assert.equal(frame(S, 20000).primary, 0)
+        assert.equal(frame(S, 22699).primary, 0)
+        assert.equal(frame(S, 22700).primary, 2)
+        const T = mk([
+            { start: 5000, end: 7000, text: "x" },
+            { start: 5000, end: 6000, text: "y" },
+            { start: 30000, end: 31000, text: "z" },
+        ])
+        assert.equal(frame(T, 6500).primary, 0, "x alone is active")
+        assert.equal(frame(T, 6999).primary, 0)
+        assert.equal(frame(T, 7000).primary, 0)
+        assert.equal(frame(T, 7000).state, "line")
+        assert.equal(frame(T, 8499).primary, 0)
+        assert.equal(frame(T, 8500).state, "gap")
+    } },
+    { name: "timeline: zero-length lines are never primary or active and do not shift gaps", fn: () => {
+        let L = mk([{ start: 5000, end: 7000, text: "x" }, { start: 5000, end: 5000, text: "ghost" }])
+        assert.equal(L.lines.length, 2)
+        let f = frame(L, 4800)
+        assert.equal(f.primary, 0)
+        assert.equal(f.upcoming, 0)
+        assert.equal(frame(L, 5000).primary, 0)
+        assert.deepEqual(frame(L, 5000).active, [0])
+        assert.equal(frame(L, 5000).last, 1)
+        L = mk([{ start: 1000, end: 2000, text: "a" }, { start: 3000, end: 3000, text: "ghost" }, { start: 20000, end: 21000, text: "b" }])
+        f = frame(L, 3100)
+        assert.equal(f.primary, 0)
+        assert.equal(f.last, 1)
+        assert.equal(f.state, "line")
+        assert.equal(frame(L, 3500).state, "gap", "gap measured from the real line, ghost ignored")
+        assert.equal(frame(L, 3500).primary, -1)
+        L = mk([{ start: 1000, end: 1000, text: "z" }, { start: 30000, end: 31000, text: "n" }])
+        assert.equal(frame(L, 1000).state, "intro")
+        assert.equal(frame(L, 1000).primary, -1)
+        assert.equal(frame(L, 1000).last, 0)
+        assert.equal(frame(L, 1000).nextChangeAt, 29700)
+        assert.equal(frame(L, 29700).primary, 1)
+        assert.equal(frame(mk([{ start: 1000, end: 1000, text: "z" }]), 1000).state, "none")
+    } },
+    { name: "timeline: one-line lyrics", fn: () => {
+        const L = mk([{ start: 0, text: "only" }])
+        let f = frame(L, 0)
+        assert.equal(f.state, "line")
+        assert.deepEqual(f.active, [0])
+        assert.equal(f.nextChangeAt, 2500)
+        f = frame(L, 2500)
+        assert.equal(f.primary, 0)
+        assert.equal(f.nextChangeAt, 4000)
+        assert.equal(frame(L, 4000).state, "outro")
+        assert.equal(frame(L, 4000).nextChangeAt, Infinity)
+        f = frame(L, -1)
+        assert.equal(f.primary, 0, "t=-1 is inside the 300 ms lead-in")
+    } },
+    { name: "timeline: words starting before their line count once the line starts", fn: () => {
+        const L = mk([{ start: 1000, end: 3000, text: "", words: [
+            { start: 800, end: 1200, text: "a " },
+            { start: 1200, end: 1600, text: "b" },
+        ] }])
+        let f = frame(L, 750)
+        assert.equal(f.primary, 0)
+        assert.equal(f.wordIndex, -1)
+        assert.equal(f.nextChangeAt, 1000)
+        f = frame(L, 1000)
+        assert.equal(f.wordIndex, 0)
+        assert.equal(f.nextChangeAt, 1200)
+    } },
+    { name: "timeline: bad options and bad times are sanitized", fn: () => {
+        const L = abc()
+        const bad = { gapThresholdMs: NaN, lingerMs: Infinity, leadInMs: "x" }
+        assert.equal(sig(frame(L, 16500, bad)), sig(frame(L, 16500)))
+        const neg = { gapThresholdMs: -5, lingerMs: -5, leadInMs: -5 }
+        assert.equal(frame(L, 9999, neg).state, "intro")
+        assert.equal(frame(L, 12000, neg).state, "gap", "negative values act as 0")
+        assert.equal(frame(L, NaN).state, "none")
+        assert.equal(frame(L, Infinity).state, "none")
+        assert.equal(frame(L, "5000").state, "none")
+        assert.equal(frame(L, undefined).state, "none")
+        assert.equal(frame(L, 5000, null).state, "intro")
+    } },
+    { name: "timeline: switching between lyrics objects, copies and JSON round trips", fn: () => {
+        const A = abc()
+        const B = mk([{ start: 100, end: 200, text: "x" }, { start: 50000, end: 51000, text: "y" }])
+        for (let i = 0; i < 4; i++) {
+            assert.deepEqual(frame(A, 11000).active, [0])
+            assert.deepEqual(frame(B, 150).active, [0])
+            assert.equal(frame(B, 20000).state, "gap")
+        }
+        assert.ok(Object.keys(A).indexOf("_tl") < 0, "index is not enumerable")
+        assert.ok(JSON.stringify(A).indexOf("_tl") < 0)
+        const copy = JSON.parse(JSON.stringify(A))
+        assert.deepEqual(frame(copy, 11000).active, [0])
+        const foreign = JSON.parse(JSON.stringify(B))
+        foreign._tl = A._tl
+        assert.deepEqual(frame(foreign, 150).active, [0])
+        assert.equal(frame(foreign, 20000).state, "gap")
+        const frozen = Object.freeze(JSON.parse(JSON.stringify(A)))
+        assert.deepEqual(frame(frozen, 11000).active, [0])
     } },
     { name: "timeline: word index and progress at word boundaries", fn: () => {
         const L = mk([{ start: 1000, end: 4000, text: "", words: [
@@ -276,7 +385,7 @@ export const cases = [
             for (;;) {
                 const f = frame(L, t, opts)
                 if (f.nextChangeAt === Infinity) {
-                    assert.equal(f.state, "outro")
+                    assert.ok(f.state === "outro" || f.state === "none")
                     break
                 }
                 assert.ok(f.nextChangeAt > t)
@@ -290,32 +399,51 @@ export const cases = [
             }
         }
     } },
-    { name: "timeline: stepping nextChangeAt visits every non-overlapping line in order", fn: () => {
+    { name: "timeline: stepping nextChangeAt visits every real line in order (primary and active)", fn: () => {
         const r = rng(2024)
-        for (let k = 0; k < 60; k++) {
-            const L = genLyrics(r, false)
+        for (let k = 0; k < 120; k++) {
+            const overlap = k % 2 === 1
+            const L = genLyrics(r, overlap)
+            const real = []
+            for (let i = 0; i < L.lines.length; i++) if (L.lines[i].effEnd > L.lines[i].start) real.push(i)
+            if (real.length === 0) continue
             let t = -1
-            const seen = []
+            const seenPrimary = []
+            const firstActive = {}
             for (let steps = 0; steps < 20000; steps++) {
                 const f = frame(L, t)
-                if (f.primary >= 0 && (seen.length === 0 || seen[seen.length - 1] !== f.primary)) seen.push(f.primary)
+                assert.ok(f.primary < 0 || L.lines[f.primary].effEnd > L.lines[f.primary].start, "ghost primary")
+                for (let a = 0; a < f.active.length; a++) if (firstActive[f.active[a]] === undefined) firstActive[f.active[a]] = t
+                if (f.primary >= 0 && (seenPrimary.length === 0 || seenPrimary[seenPrimary.length - 1] !== f.primary)) seenPrimary.push(f.primary)
                 if (f.nextChangeAt === Infinity) {
                     assert.equal(f.state, "outro")
                     break
                 }
                 t = f.nextChangeAt
             }
-            assert.equal(seen.length, L.lines.length, "every line seen once")
-            for (let i = 0; i < seen.length; i++) assert.equal(seen[i], i)
+            for (let i = 0; i < real.length; i++) {
+                assert.ok(firstActive[real[i]] !== undefined, "line " + real[i] + " never active")
+                if (i > 0) assert.ok(firstActive[real[i]] >= firstActive[real[i - 1]], "active in start order")
+            }
+            if (!overlap) {
+                let ri = 0
+                for (let i = 0; i < seenPrimary.length; i++) {
+                    while (ri < real.length && real[ri] !== seenPrimary[i]) ri++
+                    assert.ok(ri < real.length, "primary out of order")
+                }
+                for (let i = 0; i < real.length; i++) assert.ok(seenPrimary.indexOf(real[i]) >= 0, "line " + real[i] + " never primary")
+            }
             assert.equal(frame(L, t).nextChangeAt, Infinity)
         }
     } },
-    { name: "timeline: 2000 lines per frame stays fast", fn: () => {
-        const raw = []
-        for (let i = 0; i < 2000; i++) raw.push({ start: i * 1500, end: i * 1500 + 1200, text: "l" + i })
+    { name: "timeline: 2000 lines with one line spanning the song stays fast", fn: () => {
+        const raw = [{ start: 0, end: 3100000, text: "whole song" }]
+        for (let i = 0; i < 1999; i++) raw.push({ start: 1000 + i * 1500, end: 1000 + i * 1500 + 1200, text: "l" + i })
         const L = mk(raw)
+        const t0 = Date.now()
         let acc = 0
-        for (let i = 0; i < 20000; i++) acc += frame(L, (i * 137) % 3000000).last
+        for (let i = 0; i < 2000; i++) acc += frame(L, (i * 1373) % 3000000).last
         assert.ok(acc > 0)
+        assert.ok(Date.now() - t0 < 500, "2000 frames took " + (Date.now() - t0) + " ms")
     } },
 ]
