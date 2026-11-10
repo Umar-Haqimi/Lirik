@@ -127,6 +127,7 @@ QtObject {
     readonly property int loopStatus: ready ? mpris2Model.currentPlayer.loopStatus : Mpris.LoopStatus.Unknown
     readonly property double songPosition: ready ? mpris2Model.currentPlayer.position : 0
     readonly property double songLength: ready ? mpris2Model.currentPlayer.length : 0
+    readonly property real rate: ready ? mpris2Model.currentPlayer.rate : 1.0
     readonly property real volume: ready ? mpris2Model.currentPlayer.volume : 0
     readonly property string identity: ready ? mpris2Model.currentPlayer.identity : ""
 

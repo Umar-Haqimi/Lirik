@@ -9,3 +9,4 @@ FormLayout 1.0 FormLayout.qml
 Separator 1.0 Separator.qml
 SelectableLabel 1.0 SelectableLabel.qml
 UrlButton 1.0 UrlButton.qml
+ImageColors 1.0 ImageColors.qml

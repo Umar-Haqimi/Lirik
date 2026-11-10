@@ -189,5 +189,59 @@
         <entry name="showPlayerSelector" type="Bool">
             <default>false</default>
         </entry>
+        <entry name="lyricsEnabled" type="Bool">
+            <default>true</default>
+        </entry>
+        <entry name="lyricsProviders" type="String">
+            <default>lrclib,unison</default>
+        </entry>
+        <entry name="lyricsGlobalOffsetMs" type="Int">
+            <default>0</default>
+        </entry>
+        <entry name="lyricsInPanel" type="Bool">
+            <default>true</default>
+        </entry>
+        <entry name="lyricsKaraokeInPanel" type="Bool">
+            <default>true</default>
+        </entry>
+        <entry name="lyricsPanelTitleDuringGaps" type="Bool">
+            <default>true</default>
+        </entry>
+        <entry name="lyricsGapThresholdSec" type="Int">
+            <default>8</default>
+        </entry>
+        <entry name="lyricsSidePanelPosition" type="Int">
+            <default>2</default>
+        </entry>
+        <entry name="lyricsSidePanelLastSide" type="Int">
+            <default>2</default>
+        </entry>
+        <entry name="lyricsSidePanelWidth" type="Int">
+            <default>300</default>
+        </entry>
+        <entry name="lyricsKaraokeInFullView" type="Bool">
+            <default>true</default>
+        </entry>
+        <entry name="lyricsTextAlignment" type="Int">
+            <default>0</default>
+        </entry>
+        <entry name="lyricsFontScale" type="Double">
+            <default>1.1</default>
+        </entry>
+        <entry name="lyricsMinTrackSec" type="Int">
+            <default>30</default>
+        </entry>
+        <entry name="lyricsMaxTrackSec" type="Int">
+            <default>900</default>
+        </entry>
+        <entry name="lyricsExcludedPlayers" type="String">
+            <default></default>
+        </entry>
+        <entry name="lyricsCacheEnabled" type="Bool">
+            <default>true</default>
+        </entry>
+        <entry name="lyricsDevBaseUrl" type="String">
+            <default></default>
+        </entry>
     </group>
 </kcfg>
