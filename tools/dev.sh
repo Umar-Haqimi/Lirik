@@ -233,7 +233,13 @@ do_smoke() {
     sleep 1
     local log=.local/smoke/viewer.log
     # plasmoidviewer cannot be quit from QML (docs/DECISIONS.md D8), so `timeout` bounds it.
-    $OFFSCREEN timeout 20 plasmoidviewer -a src/ -f horizontal > "$log" 2>&1 || true
+    # The pass marker below is upstream's console.debug; force debug output on (a desktop's qtlogging.ini often
+    # disables *.debug, which would hide it).
+    QT_LOGGING_RULES="js.debug=true;qml.debug=true" $OFFSCREEN timeout 20 plasmoidviewer -a src/ -f horizontal > "$log" 2>&1 || true
+    local busnames=""
+    command -v busctl >/dev/null 2>&1 && busnames="$(busctl --user list 2>/dev/null | grep -o 'org.mpris.MediaPlayer2\.[^ ]*' | sort -u | tr '\n' ' ')"
+    local fake_alive="no"
+    [ -n "$FAKE_PID" ] && kill -0 "$FAKE_PID" 2>/dev/null && fake_alive="yes"
     cleanup_bg
     if grep -E "$OUR_QML_RE" "$log" | grep -vE 'qml: (Lirik|Player ready)' | grep -E ':[0-9]+(:[0-9]+)?: ' ; then
         die "QML warnings/errors from Lirik files (see $log)"
@@ -241,7 +247,15 @@ do_smoke() {
     if grep -E 'TypeError|ReferenceError|SyntaxError|is not installed|unavailable|Cannot assign' "$log" | grep -v 'org.kde.desktopcontainment' ; then
         die "QML errors during smoke (see $log)"
     fi
-    grep -q 'Player ready changed: true' "$log" || die "widget never saw the fake player (see $log)"
+    if ! grep -q 'Player ready changed: true' "$log"; then
+        echo "── smoke diagnostics"
+        echo "fake player still running at the end: $fake_alive"
+        echo "MPRIS players on the session bus: ${busnames:-<busctl unavailable or none>}"
+        echo "── .local/smoke/fake.log (tail)"; tail -n 15 .local/smoke/fake.log
+        echo "── viewer log, Lirik/Player/QML lines (tail)"
+        grep -E 'Lirik|Player|\.qml|\.mjs|rror' "$log" | grep -v 'org.kde.desktopcontainment' | tail -n 25
+        die "widget never saw the fake player (full log: $log)"
+    fi
     ok "smoke"
 }
 
