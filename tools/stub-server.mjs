@@ -18,6 +18,7 @@
 //   ~latencyN   delay the response N ms        ~404   force not found       ~429   rate limited (Retry-After 3)
 //   ~503        plain 503                      ~500   server error          ~pending  Unison 503 LOOKUP_PENDING
 //                                                                            for the first two requests (Retry-After 1)
+// GET /__redirect?to=<url> answers 302 to <url>; the same handler also listens on PORT + 1 (a second origin).
 // Control endpoint: POST /__control {"latencyMs":N,"status":404|429|500|503|"pending"|null,"retryAfter":S,"reset":true}
 //   applies to every provider request until reset. GET /__log returns the request log, DELETE /__log clears it.
 // Every provider request is also printed to stdout as one JSON line {t, provider, path, query}.
@@ -270,6 +271,12 @@ const server = http.createServer(function (req, res) {
         })
         return
     }
+    // Redirect probe for the allow-list test: /__redirect?to=<absolute url> answers 302 Location: <url>.
+    if (p === "/__redirect") {
+        const to = url.searchParams.get("to") || ""
+        res.writeHead(302, { location: to, "cache-control": "no-store" })
+        return res.end()
+    }
     if (req.method !== "GET") return send(res, 405, { error: "method not allowed" })
     if (p.startsWith("/api/")) return handleProvider("lrclib", req, res, url)
     if (p === "/lyrics" || p.startsWith("/lyrics/")) return handleProvider("unison", req, res, url)
@@ -279,3 +286,7 @@ const server = http.createServer(function (req, res) {
 server.listen(PORT, "127.0.0.1", function () {
     console.error("stub-server listening on http://127.0.0.1:" + PORT)
 })
+// A second origin (PORT + 1) served by the same handler: the target of the redirect-refusal test.
+const second = http.createServer(server.listeners("request")[0])
+second.on("error", function (e) { console.error("stub-server: second origin not available: " + e.message) })
+second.listen(PORT + 1, "127.0.0.1")

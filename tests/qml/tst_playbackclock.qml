@@ -135,4 +135,37 @@ TestCase {
         clk.globalOffsetMs = -200
         compare(d.count, 2)
     }
+
+    function test_track_change_requests_a_fresh_position() {
+        const p = spy("pollRequested")
+        clk.trackKey = "a"
+        compare(p.count, 1, "polls once on a track change even with pollEnabled false")
+        clk.trackKey = "b"
+        compare(p.count, 2)
+    }
+
+    function test_small_jitter_makes_no_signals() {
+        clk.playing = true
+        clk.positionUs = 0
+        const d = spy("discontinuity")
+        const r = spy("reanchored")
+        // the full view's 200 ms poll: five reports a second with +-25 ms of jitter
+        for (let i = 1; i <= 25; i++) {
+            wall += 200
+            clk.positionUs = (i * 200 + (i % 2 ? 25 : -25)) * 1000
+        }
+        compare(d.count, 0)
+        compare(r.count, 0)
+        compare(clk.anchor.posMs, 0, "the original anchor is kept")
+    }
+
+    function test_global_offset_is_clamped() {
+        clk.playing = false
+        clk.positionUs = 10000000
+        clk.globalOffsetMs = 99999
+        compare(clk.lyricTimeAt(wall), 5000)
+        compare(clk.seekTargetUs(5000), 10000000)
+        clk.globalOffsetMs = -99999
+        compare(clk.lyricTimeAt(wall), 15000)
+    }
 }

@@ -76,11 +76,20 @@ Item {
     property bool _widthLyric: false
     property bool _switching: false
     property bool _frontIsA: true
+    property bool _built: false
 
     implicitWidth: root._widthLyric ? root._lyricW : root._titleW
     implicitHeight: titleText.implicitHeight
     width: root.implicitWidth
     height: root.implicitHeight
+
+    // Back on the title: nothing in the hidden lyric layer may keep animating (trap 12).
+    onLyricAmountChanged: {
+        if (root.lyricAmount === 0 && root._built) {
+            root._freeze(slotA)
+            root._freeze(slotB)
+        }
+    }
 
     Behavior on lyricAmount {
         NumberAnimation {
@@ -214,9 +223,22 @@ Item {
         k.frameSerial = tl.frameSerial
     }
 
+    // A line that is not (or no longer) the live one: fully sung, no running animation.
+    function _freeze(slot: var): void {
+        const k = slot.karaokeLine
+        const n = k.words ? k.words.length : 0
+        k.playing = false
+        k.wordIndex = n - 1
+        k.wordProgress = 1
+        k.wordRemainingMs = 0
+        k.lineProgress = 1
+        k.lineRemainingMs = 0
+    }
+
     function _swapIn(line: var): void {
         slide.complete()
         const out = root._front()
+        root._freeze(out)
         const inn = root._back()
         const animate = root.lyricAmount > 0.5 && root.currentLine !== null
         root.currentLine = line
@@ -288,4 +310,6 @@ Item {
 
     onPlayingChanged: root._onFrame()
     onKaraokeChanged: root._onFrame()
+
+    Component.onCompleted: root._built = true
 }

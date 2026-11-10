@@ -48,6 +48,9 @@ QtObject {
     property int alternatesCount: 0
     /// Local one-second countdown while "ratelimited" (null otherwise).
     property var retryInS: null
+    /// "" | "network" | "timeout" | "http": a code, NOT user-facing text; the view maps it to i18n() copy.
+    property string errorCode: ""
+    /// Same value as errorCode (kept for the views written against the old name); never translated here.
     property string errorText: ""
     /// Provider and HTTP status for tooltips; plain text, may contain provider text.
     property string errorDetail: ""
@@ -61,14 +64,19 @@ QtObject {
     readonly property Http http: Http {
         devBaseUrl: root.devBaseUrl
     }
+    // The cache object is bound to the lyrics master switch, not to `cacheEnabled`: per-track prefs (offset, pin,
+    // hide) are user preferences that persist even with the lyrics cache off (D17). The resolver gates the
+    // cached rows on cacheEnabled itself. While lyrics are off nothing opens the database.
     readonly property LyricsCache cache: LyricsCache {
-        enabled: root.cacheEnabled
+        enabled: root.enabled
         dbName: root.cacheDbName
         maxEntries: root.cacheMaxEntries
     }
 
     property var _resolver: null
     property int _dynTimers: 0
+    /// Wall ms at which a rate-limit cooldown ends (resolver `retryAt`), or 0.
+    property real _retryAt: 0
 
     readonly property Component _timerComponent: Component {
         Timer {
@@ -84,7 +92,7 @@ QtObject {
                 stop()
                 return
             }
-            const left = Math.max(0, Number(root.retryInS) - 1)
+            const left = root._retryAt > 0 ? Math.max(0, Math.ceil((root._retryAt - Date.now()) / 1000)) : Math.max(0, Number(root.retryInS) - 1)
             root.retryInS = left
             if (left <= 0) stop()
         }
@@ -108,8 +116,12 @@ QtObject {
             if (!alive) return
             alive = false
             root._dynTimers--
-            t.stop()
-            t.destroy()
+            try {
+                t.stop()
+                t.destroy()
+            } catch (e) {
+                // the timer died with the controller
+            }
         }
         t.triggered.connect(function () {
             release()
@@ -127,15 +139,17 @@ QtObject {
     })
 
     readonly property var _cacheDep: ({
-        get: function (key) { return root.cache.get(key) },
-        put: function (key, row) { root.cache.put(key, row) },
-        touch: function (key, t) { root.cache.touch(key, t) },
-        getPrefs: function (key) { return root.cache.getPrefs(key) },
-        setPrefs: function (key, p) { root.cache.setPrefs(key, p) }
+        // a database that failed once is treated as absent for the rest of the session (prefs stay in memory)
+        get: function (key) { return root.cache.healthy ? root.cache.get(key) : null },
+        put: function (key, row) { if (root.cache.healthy) root.cache.put(key, row) },
+        touch: function (key, t) { if (root.cache.healthy) root.cache.touch(key, t) },
+        getPrefs: function (key) { return root.cache.healthy ? root.cache.getPrefs(key) : null },
+        setPrefs: function (key, p) { if (root.cache.healthy) root.cache.setPrefs(key, p) }
     })
 
+    // Order matters: lyrics, syncKind and offsets are assigned BEFORE trackKey, so the clock's anchor reset
+    // (PlaybackClock.onTrackKeyChanged) never recomputes the old lyrics at the new position.
     function _onUpdate(s: var): void {
-        root.trackKey = s.trackKey ? String(s.trackKey) : ""
         root.lyrics = s.lyrics
         root.source = s.source
         root.credits = s.source && Array.isArray(s.source.credits) ? s.source.credits : []
@@ -144,14 +158,19 @@ QtObject {
         root.alternatesCount = Array.isArray(s.alternates) ? s.alternates.length : 0
         root.skipReason = s.skipReason ? String(s.skipReason) : ""
         if (s.error) {
-            root.errorText = qsTr("Couldn't load lyrics")
+            // No translatable text here (bin/i18n only extracts i18n*): a stable code the view turns into i18n text.
+            const code = s.error.status > 0 ? "http" : (/timeout/i.test(String(s.error.message)) ? "timeout" : "network")
+            root.errorCode = code
+            root.errorText = code
             const st = s.error.status > 0 ? " (HTTP " + s.error.status + ")" : ""
             const msg = s.error.message ? ": " + String(s.error.message).slice(0, 120) : ""
             root.errorDetail = String(s.error.provider) + st + msg
         } else {
+            root.errorCode = ""
             root.errorText = ""
             root.errorDetail = ""
         }
+        root._retryAt = s.status === "ratelimited" && typeof s.retryAt === "number" ? s.retryAt : 0
         root.retryInS = s.status === "ratelimited" && typeof s.retryInS === "number" ? s.retryInS : null
         const prev = root.status
         root.status = s.status
@@ -166,6 +185,7 @@ QtObject {
             root._loadingTimer.stop()
             root.showLoading = false
         }
+        root.trackKey = s.trackKey ? String(s.trackKey) : ""
     }
 
     function _pushConfig(): void {
@@ -228,6 +248,13 @@ QtObject {
         })
         root._pushConfig()
         root._pushTrack()
+    }
+
+    Component.onDestruction: {
+        if (root._resolver) {
+            root._resolver.dispose()
+            root._resolver = null
+        }
     }
 
     // --- methods ---

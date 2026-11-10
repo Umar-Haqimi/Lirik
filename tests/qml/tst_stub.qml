@@ -107,6 +107,28 @@ TestCase {
         compare(calls.length, 1)
     }
 
+    function test_http_redirect_to_another_origin_is_refused() {
+        if (!up) skip("stub server not running")
+        // 302 to a second 127.0.0.1 port: not the configured dev origin, so the response must not be delivered
+        const h = createTemporaryObject(httpComp, tc)
+        h.request({ url: base + "/__redirect?to=" + encodeURIComponent("http://127.0.0.1:47801/api/get?track_name=Line%20Placeholder") }, cb)
+        tryCompare(calls, "length", 1, 5000)
+        compare(calls[0].res, null)
+        verify(calls[0].err !== null)
+        compare(calls[0].err.message, "redirect to a host that is not allowed")
+        wait(200)
+        compare(calls.length, 1)
+    }
+
+    function test_http_redirect_within_the_allowed_origin_is_followed() {
+        if (!up) skip("stub server not running")
+        const h = createTemporaryObject(httpComp, tc)
+        h.request({ url: base + "/__redirect?to=" + encodeURIComponent(base + "/api/get?track_name=Line%20Placeholder") }, cb)
+        tryCompare(calls, "length", 1, 5000)
+        compare(calls[0].err, null)
+        compare(calls[0].res.status, 200)
+    }
+
     function test_http_allow_list_still_applies() {
         if (!up) skip("stub server not running")
         const h = createTemporaryObject(httpComp, tc, { devBaseUrl: "" })

@@ -243,4 +243,94 @@ TestCase {
         compare(ctl.status, "idle")
         compare(ctl.activeTimers, 0)
     }
+
+    function test_disabled_never_opens_the_database() {
+        const c = createTemporaryObject(ctlComp, tc, { enabled: false, httpOverride: fake, providers: "lrclib", cacheDbName: "lirik-test-off-" + Math.floor(Math.random() * 1e9) })
+        c.trackTitle = "Placeholder Song"
+        c.trackArtist = "Example Artist"
+        c.trackLengthUs = 180e6
+        c.hasMedia = true
+        tryCompare(c, "skipReason", "disabled", 3000)
+        wait(50)
+        compare(c.cache._db, null, "no database opened while lyrics are off")
+        compare(fake.pending.length, 0)
+        // switching on opens it lazily
+        c.enabled = true
+        waitRequests(1)
+        verify(c.cache._db !== null)
+    }
+
+    function test_prefs_survive_with_lyrics_cache_off() {
+        const db = "lirik-test-prefs-" + Math.floor(Math.random() * 1e9)
+        const a = createTemporaryObject(ctlComp, tc, { httpOverride: fake, providers: "lrclib", cacheEnabled: false, cacheDbName: db })
+        a.trackTitle = "Placeholder Song"
+        a.trackArtist = "Example Artist"
+        a.trackAlbum = "Placeholder Album"
+        a.trackLengthUs = 180e6
+        a.hasMedia = true
+        fake.respond(nextRequest(), 200, lrclibWordRecord(), {})
+        compare(a.status, "synced")
+        a.setTrackOffset(450)
+        compare(a.offsetMs, 450)
+        a.destroy()
+        wait(20)
+        const b = createTemporaryObject(ctlComp, tc, { httpOverride: fake, providers: "lrclib", cacheEnabled: false, cacheDbName: db })
+        b.trackTitle = "Placeholder Song"
+        b.trackArtist = "Example Artist"
+        b.trackAlbum = "Placeholder Album"
+        b.trackLengthUs = 180e6
+        b.hasMedia = true
+        tryCompare(b, "offsetMs", 450, 3000)
+        b.clearCache()
+    }
+
+    function test_destroy_with_a_request_in_flight() {
+        play()
+        const r = nextRequest()
+        compare(ctl.status, "loading")
+        ctl.destroy()
+        wait(20)
+        let threw = false
+        try {
+            fake.respond(r, 200, lrclibWordRecord(), {}) // a late answer must be ignored
+        } catch (e) {
+            threw = true
+        }
+        verify(!threw)
+        wait(50)
+        ctl = null
+    }
+
+    function test_lyrics_are_set_before_the_track_key() {
+        const seen = []
+        ctl.trackKeyChanged.connect(function () {
+            seen.push({ key: ctl.trackKey, kind: ctl.syncKind, status: ctl.status, hasLyrics: ctl.lyrics !== null, offset: ctl.offsetMs })
+        })
+        const lyrics = { sync: "line", lines: [{ start: 0, end: 1000, text: "la", words: [], effEnd: 1000 }], plain: "", source: { provider: "lrclib", id: "1", credits: [] } }
+        // one resolver update that switches track and carries lyrics (a cache hit)
+        ctl._onUpdate({ status: "synced", trackKey: "k-new", lyrics: lyrics, source: lyrics.source, offsetMs: 120, alternates: [] })
+        compare(seen.length, 1)
+        compare(seen[0].key, "k-new")
+        compare(seen[0].hasLyrics, true, "the key changes only after the lyrics were assigned")
+        compare(seen[0].kind, "line")
+        compare(seen[0].status, "synced")
+        compare(seen[0].offset, 120)
+    }
+
+    function test_error_is_a_code_not_text() {
+        play()
+        fake.respond(nextRequest(), 500, JSON.stringify({ message: "boom" }), {})
+        compare(ctl.status, "error")
+        compare(ctl.errorCode, "http")
+        compare(ctl.errorText, "http")
+    }
+
+    function test_countdown_follows_the_resolver_deadline() {
+        play()
+        fake.respond(nextRequest(), 429, JSON.stringify({ message: "slow" }), { "retry-after": "5" })
+        compare(ctl.status, "ratelimited")
+        const first = ctl.retryInS
+        wait(1300)
+        verify(first - ctl.retryInS >= 1 && first - ctl.retryInS <= 2, "retryInS " + first + " -> " + ctl.retryInS)
+    }
 }

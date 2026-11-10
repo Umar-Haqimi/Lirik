@@ -169,4 +169,20 @@ TestCase {
         compare(slot.frontKaraoke._sungText.textFormat, Text.PlainText)
         lyrics = Data.wordLyrics()
     }
+
+    function test_outgoing_and_hidden_lines_do_not_animate() {
+        slot.playing = true
+        setFrame("line", 0, 0, { wordIndex: 0, wordProgress: 0, wordRemainingMs: 5000 })
+        tryCompare(slot, "lyricAmount", 1, 2000)
+        const first = slot.frontKaraoke
+        tryVerify(function () { return first.animating })
+        setFrame("line", 1, 1, { wordIndex: 0, wordProgress: 0, wordRemainingMs: 5000 })
+        compare(first.playing, false, "the outgoing line is frozen")
+        tryVerify(function () { return !first.animating })
+        tryVerify(function () { return slot.frontKaraoke.animating })
+        setFrame("outro", -1, 1)
+        tryCompare(slot, "lyricAmount", 0, 2000)
+        tryVerify(function () { return !slot.frontKaraoke.animating })
+        compare(slot.frontKaraoke.playing, false)
+    }
 }

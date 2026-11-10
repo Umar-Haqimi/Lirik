@@ -168,7 +168,7 @@ export function createResolver(deps) {
     // --- cache and prefs adapters ---------------------------------------------
 
     function rowsOn() {
-        return !!cache && cfg.cacheEnabled
+        return !!cache && cfg.enabled && cfg.cacheEnabled
     }
 
     function safe(fn, dflt) {
@@ -183,14 +183,15 @@ export function createResolver(deps) {
     // Per-track prefs are user preferences, not cache: they persist even when the lyrics cache is off.
     function loadPrefs(key) {
         let p = null
-        if (cache) p = safe(function () { return cache.getPrefs(key) }, null)
+        // lyrics off: parity with upstream, the database is never opened, read or written
+        if (cache && cfg.enabled) p = safe(function () { return cache.getPrefs(key) }, null)
         if (!p) p = memPrefs[key] || null
         return normPrefs(p)
     }
 
     function savePrefs(key, p) {
         memPrefs[key] = p
-        if (cache) safe(function () { cache.setPrefs(key, p) }, null)
+        if (cache && cfg.enabled) safe(function () { cache.setPrefs(key, p) }, null)
     }
 
     function cacheGet(key) {
