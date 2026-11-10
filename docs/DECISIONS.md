@@ -402,3 +402,31 @@ checked our Kirigami / libkmpris usage against the real KDE sources — no API m
   word-syncing and 25 s paused (budget < 2 % / ≤ 0.5 % of one core). In the container a proxy test counts work:
   over a simulated minute, frame bumps ≈ word/line changes (83 vs 84 expected) plus 1 poll/s, and 0 while
   paused.
+
+## D20. Side panel review fixes (after M6)
+
+- **Animations off** = `Kirigami.Units.longDuration <= ANIMATIONS_OFF_MAX_MS` (1): Plasma clamps durations to
+  1 ms rather than 0, so a `> 0` guard would let infinite animations strobe at ~1 ms per step (trap 12).
+  Infinite animations, sweeps and the follow animation are skipped then; the wipe jumps per word.
+- **Plain text everywhere**: every ToolTip and Label under `ui/lyrics` sets `textFormat: Text.PlainText`
+  (PC3 ToolTip defaults to AutoText, and error details can carry provider text); `dev.sh` policy enforces it
+  for ToolTips and `tests/node/security.test.mjs` per element.
+- **Word rows**: breaks at whitespace and next to CJK / kana / Hangul / fullwidth characters; a chunk wider than
+  the row is placed word by word; RTL lines (first strong character) are drawn as plain wrapped Text without a
+  wipe.
+- **Following**: scroll-bar drag, wheel (`Kirigami.WheelHandler`, so KDE's wheel setting applies) and keys
+  suspend it; clicking a line follows that line until the timeline moves on or 1.5 s pass; Enter/Space seek to
+  the highlighted line.
+- **Icon chain** resolved with invisible probe icons (`LyricsIconName.qml`, driven by `Kirigami.Icon.status`),
+  because `fallback` is a single name (D9 corrected).
+- **Error copy** is built in the panel from `errorCode` / `errorProvider` / `errorStatus` (translated: "Could not
+  connect to %1", "%1 did not answer in time", "%1 answered with HTTP %2"), technical detail appended as plain
+  text, also in the Retry button's `Accessible.description`.
+- **Hidden popup**: the panel's frame inputs are frozen while `widget.lyricsSurfaceFull` is false; only the
+  primary delegate receives word fields.
+- **Desktop parity**: `Layout.maximumWidth` is unbounded only while a side panel is shown; the panel width is
+  clamped to 200–600 (`sidepanel.mjs`, shared tables).
+- **Toggle**: placed below the header when the player selector is visible; next state is a pure function
+  (`toggleSidePanel`).
+- **Credit line** is one translatable string ("Lyrics from %1, submitted by %2") split on placeholders into
+  separate plain-text pieces, so links stay separate items and translators can reorder.

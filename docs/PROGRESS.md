@@ -46,23 +46,48 @@ Milestones from `docs/SPEC.md` §8. Each one ends with `./tools/dev.sh check` gr
   fault injection, request log); `tests/live/live.test.mjs` (opt-in, passed 2/2 against the real APIs);
   pure-QML Plasma stubs in `tests/qml/stubs/` used only when the real modules are missing.
 
-## M5 — Panel lyrics 🟡 (implemented 2026-11-10, Opus review pending)
+## M5 — Panel lyrics ✅ (2026-11-10)
 
-- `ui/lyrics/{PlaybackClock,LyricsTimeline,KaraokeLine,CompactLyrics}.qml`; patches: `main.qml` (controller,
-  clock, timeline), `Compact.qml` (CompactLyrics instead of SongAndArtistText), `Player.qml` (`rate`); all
-  SPEC §5 config keys appended to `main.xml`.
-- `tests/snapshots/render.sh` (`dev.sh snap`) renders the panel slot and byte-compares lyrics-off CompactLyrics
-  against bare SongAndArtistText. Looked at the PNGs: word wipe mid-word at two timestamps, dimmed unsung text,
-  long line panned with the wipe centred, paused frame, gap (title / dimmed last line).
-- `tools/e2e.mjs` (fake player + stub server + offscreen plasmoidviewer) is written but could not run in the
-  cloud container (no Plasma / D-Bus session).
+- `ui/lyrics/{PlaybackClock,LyricsTimeline,KaraokeLine,CompactLyrics}.qml`; patches: `main.qml`, `Compact.qml`
+  (CompactLyrics instead of SongAndArtistText), `Player.qml` (`rate`); all SPEC §5 keys appended to `main.xml`.
+- Snapshots (`dev.sh snap`) reviewed: word wipe mid-word at two timestamps, long line panned with the wipe
+  centred, paused, gap (title / dimmed last line); lyrics-off CompactLyrics is byte-identical to bare
+  SongAndArtistText. Opus review (checked against real KDE sources) fixes applied: no DB with lyrics off,
+  redirect allow-list check, dispose on destruction, update ordering, perf of silent re-anchors. D18.
 
-## Next milestones
-M6 side panel (in progress) → M7 config page/i18n/perf → M8 hardening/docs/package. See `docs/SPEC.md` §8.
+## M6 — Full view side panel ✅ (2026-11-10)
+
+- `ui/lyrics/{LyricsPanel,LyricLineDelegate,LyricsFooter,FullWithLyrics,LyricsIconName}.qml`, toggle button
+  in `Full.qml`, `fullRepresentation: FullWithLyrics {}`; `code/sidepanel.mjs` (toggle next-state, width clamp).
+- Every §4.2 state rendered light + dark and looked at; Unison credit with both links, LRCLIB credit.
+- Opus review fixes applied: animations-off = `longDuration <= 1` (Plasma clamps to 1 ms), PlainText on every
+  ToolTip, scroll-bar drag suspends following, CJK/kana/Hangul wrapping, RTL fallback, icon fallback chain,
+  click-to-seek follow, desktop parity width, translated error copy, frozen inputs while the popup is closed,
+  a11y (keyboard seek, focusable links), single-string credit line. D18, D20.
+
+## M7 — Config page and polish ✅ (2026-11-10)
+
+- `ui/config/Lyrics.qml` (fourth category), `ui/lyrics/LyricsEngine.qml` (controller + clock + timeline out of
+  main.qml, tested with a libkmpris-like fake player), tooltip line, animations-off, `bin/i18n extract`,
+  `tools/perf.sh` (desktop) + a work-counting proxy test. D19.
+
+## M8 — Hardening, docs, package ✅ (2026-11-10, desktop verification pending)
+
+- `tests/node/security.test.mjs` (every SPEC §6 item), `fixtures-hygiene.test.mjs` (placeholder vocabulary),
+  `package.test.mjs`; `tools/package.sh` (`dev.sh package` → `lirik-0.1.0.plasmoid`, src/ content only);
+  README, `docs/MANUAL_TEST.md`.
+- Gate in the cloud container: lint (14 QML files), Node 490, V4 427/427 (same set as Node), qmltestrunner 192,
+  snap green, package 67 files. Smoke skipped (no plasmoidviewer there).
+
+## Next
+- **Desktop verification** (the user): `docs/MANUAL_TEST.md` §1 — `./tools/dev.sh check` (smoke now runs
+  against real Plasma), `e2e`, `perf`, `view horizontal|planar`, install, the per-player checklist.
+- After MVP acceptance: N1 … N8 (SPEC §3), one milestone each.
 
 ## Not verified in the cloud container (needs the desktop)
-- Nothing has been loaded in a real `plasmoidviewer` since M4: run `./tools/dev.sh check` (smoke stage),
-  `./tools/dev.sh e2e`, and `./tools/dev.sh view` on the desktop. Tests there use the real Plasma modules.
+- Nothing has run in a real `plasmoidviewer` / plasmashell since M4: real Full.qml inside FullWithLyrics, the
+  toggle button, the config page in the real KCM, Menu placement, icons, ToolTips, Kirigami.WheelHandler,
+  e2e and perf. See `docs/MANUAL_TEST.md` §4.
 
 ## Gotchas for a new session
 - Qt 6 tools are in `/usr/lib/qt6/bin` (`/usr/bin` ones are Qt 5). No `qmljs`: V4 runs via `qml`.
