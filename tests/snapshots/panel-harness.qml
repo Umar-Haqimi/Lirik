@@ -47,6 +47,7 @@ Window {
         id: widgetFake
         property int formFactor: PlasmaCore.Types.Horizontal
         property bool expanded: true
+        property bool lyricsSurfaceFull: true
         property font baseFont: Kirigami.Theme.defaultFont
     }
     property var widget: widgetFake
@@ -64,7 +65,9 @@ Window {
         property string syncKind: "word"
         property bool showLoading: false
         property var retryInS: null
-        property string errorText: ""
+        property string errorCode: ""
+        property string errorProvider: ""
+        property int errorStatus: 0
         property string errorDetail: ""
         property var credits: [{ text: "Unison", url: "https://unison.betterlyrics.org/song/abc" }, { text: "Example Curator", url: "https://unison.betterlyrics.org/curator/k1" }]
         property int offsetMs: 300
@@ -178,7 +181,7 @@ Window {
             }),
             t("instrumental", function () { panel.status = "instrumental" }),
             t("notfound", function () { panel.status = "notfound" }),
-            t("error", function () { panel.status = "error"; panel.errorDetail = "lrclib (HTTP 503)" }),
+            t("error", function () { panel.status = "error"; panel.errorCode = "http"; panel.errorProvider = "lrclib"; panel.errorStatus = 503; panel.errorDetail = "lrclib (HTTP 503)" }),
             t("ratelimited", function () { panel.status = "ratelimited"; panel.retryInS = 12 }),
             t("skipped", function () { panel.status = "skipped" }),
             t("nomedia", function () { mid(); panel.hasMedia = false })

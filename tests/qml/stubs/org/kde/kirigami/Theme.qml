@@ -13,6 +13,8 @@ QtObject {
     }
     /// Stub only: the snapshot harness flips this to render the dark palette (Breeze Light / Breeze Dark values).
     property bool dark: false
+    /// Stub only: icon names the (pretend) icon theme lacks; Kirigami.Icon.status is Error for them.
+    property var missingIcons: []
     readonly property color textColor: dark ? "#fcfcfc" : "#232629"
     readonly property color disabledTextColor: dark ? "#a1a9b1" : "#7f8c8d"
     readonly property color highlightColor: "#3daee9"

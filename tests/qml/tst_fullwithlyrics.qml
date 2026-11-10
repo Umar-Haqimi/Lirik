@@ -7,8 +7,11 @@ import org.kde.plasma.private.mpris as Mpris
 import "../fwl/ui/lyrics"
 import "lyrics-data.mjs" as Data
 
-// FullWithLyrics around the patched upstream Full.qml, against the stub Plasma modules: child order for Left /
-// Right / Hidden, widths and heights (D13), the desktop form factor, seek wiring and the toggle button.
+// FullWithLyrics (the REAL file, reached through the tests/fwl symlinks) around a STAND-IN for upstream Full.qml
+// (tests/fwl/ui/Full.qml: the real one needs Kirigami.Theme attached properties the stubs cannot provide), against the
+// stub Plasma modules: child order for Left / Right / Hidden, widths and heights (D13), the desktop form factor,
+// width clamping, seek wiring and frame gating. The toggle button in the real Full.qml is NOT loaded here; its
+// logic is tested as the pure function toggleSidePanel (tests/cases/sidepanel.cases.mjs).
 // It reads `plasmoid`, `widget`, `player`, `lyricsController`, `lyricsTimeline`, `playbackClock` by unqualified
 // lookup, like in main.qml.
 TestCase {
@@ -51,6 +54,7 @@ TestCase {
         id: widgetFake
         property int formFactor: PlasmaCore.Types.Horizontal
         property bool expanded: true
+        property bool lyricsSurfaceFull: true
         property font baseFont: Qt.font({ pointSize: 10 })
     }
     property var widget: widgetFake
@@ -95,7 +99,9 @@ TestCase {
         property string syncKind: "line"
         property bool showLoading: false
         property var retryInS: null
-        property string errorText: ""
+        property string errorCode: ""
+        property string errorProvider: ""
+        property int errorStatus: 0
         property string errorDetail: ""
         property var credits: [{ text: "LRCLIB", url: "https://lrclib.net" }]
         property int offsetMs: 0
@@ -220,5 +226,64 @@ TestCase {
         p.seekRequested(12000)
         compare(seekedTo.length, 1)
         playerFake.canSeek = true
+    }
+
+    function test_desktop_with_lyrics_off_or_hidden_keeps_upstream_max_width() {
+        resetCfg()
+        cfg.lyricsEnabled = false
+        widgetFake.formFactor = PlasmaCore.Types.Planar
+        plasmoid = ({ configuration: cfg })
+        let f = createTemporaryObject(comp, tc, { width: 600, height: 500 })
+        const full = fullOf(f)
+        compare(f.Layout.maximumWidth, full.Layout.maximumWidth)
+        f = make(0, PlasmaCore.Types.Planar)
+        compare(f.Layout.maximumWidth, fullOf(f).Layout.maximumWidth)
+        f = make(1, PlasmaCore.Types.Planar)
+        compare(f.Layout.maximumWidth, Infinity)
+    }
+
+    function test_panel_width_is_clamped() {
+        resetCfg()
+        cfg.lyricsSidePanelWidth = 50
+        plasmoid = ({ configuration: cfg })
+        let f = createTemporaryObject(comp, tc, { width: 600, height: 500 })
+        compare(f.panelWidth, 200)
+        compare(lyricsPanel(f).Layout.preferredWidth, 200)
+        resetCfg()
+        cfg.lyricsSidePanelWidth = 5000
+        plasmoid = ({ configuration: cfg })
+        f = createTemporaryObject(comp, tc, { width: 600, height: 500 })
+        compare(f.panelWidth, 600)
+    }
+
+    function test_layout_is_not_mirrored_by_rtl_locales() {
+        // Right = panel physically right; in a mirrored context the layout direction flips so it stays right
+        const f = make(2)
+        const p = lyricsPanel(f), full = fullOf(f)
+        compare(f.layoutDirection, Qt.RightToLeft)
+        f.LayoutMirroring.enabled = true
+        compare(f.layoutDirection, Qt.LeftToRight)
+        wait(50)
+        verify(p.x > full.x, "panel still on the right when mirrored")
+    }
+
+    function test_frame_is_frozen_while_the_surface_is_hidden() {
+        widgetFake.lyricsSurfaceFull = true
+        const f = make(2)
+        const p = lyricsPanel(f)
+        compare(p.primary, 1)
+        compare(p.frameState, "line")
+        widgetFake.lyricsSurfaceFull = false
+        timelineFake.primary = 3
+        timelineFake.state = "gap"
+        wait(30)
+        compare(p.primary, 1, "frozen: nothing recomputes with the popup closed")
+        compare(p.frameState, "line")
+        compare(p.playing, false)
+        widgetFake.lyricsSurfaceFull = true
+        compare(p.primary, 3)
+        compare(p.frameState, "gap")
+        timelineFake.primary = 1
+        timelineFake.state = "line"
     }
 }

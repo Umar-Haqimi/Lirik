@@ -1,4 +1,6 @@
 import "./components"
+import "./lyrics"
+import "../code/sidepanel.mjs" as SidePanel
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.core as PlasmaCore
@@ -390,26 +392,23 @@ Item {
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: Kirigami.Units.smallSpacing
+        // below the player selector tabs when they are shown
+        anchors.topMargin: Kirigami.Units.smallSpacing + (headerbar.visible ? headerbar.height : 0)
+        display: PlasmaComponents3.AbstractButton.IconOnly
+        icon.name: lyricsIcon.name
+        text: root.lyricsToggleText
+        checkable: false
         checked: plasmoid.configuration.lyricsSidePanelPosition !== 0
-        contentItem: Kirigami.Icon {
-            source: "view-media-lyrics"
-            fallback: "view-media-track"
-            implicitWidth: Kirigami.Units.iconSizes.smallMedium
-            implicitHeight: Kirigami.Units.iconSizes.smallMedium
-        }
-        Accessible.name: root.lyricsToggleText
         onClicked: {
             const cfg = plasmoid.configuration
-            if (cfg.lyricsSidePanelPosition === 0) {
-                cfg.lyricsSidePanelPosition = cfg.lyricsSidePanelLastSide === 1 ? 1 : 2
-            } else {
-                cfg.lyricsSidePanelLastSide = cfg.lyricsSidePanelPosition
-                cfg.lyricsSidePanelPosition = 0
-            }
+            const next = SidePanel.toggleSidePanel(cfg.lyricsSidePanelPosition, cfg.lyricsSidePanelLastSide)
+            cfg.lyricsSidePanelLastSide = next.lastSide
+            cfg.lyricsSidePanelPosition = next.position
         }
-        PlasmaComponents3.ToolTip {
-            text: root.lyricsToggleText
-            visible: lyricsToggle.hovered
-        }
+        PlasmaComponents3.ToolTip.text: text
+        PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
+        PlasmaComponents3.ToolTip.visible: hovered
+
+        LyricsIconName { id: lyricsIcon }
     }
 }

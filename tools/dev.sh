@@ -102,6 +102,14 @@ do_policy() {
             die "main.xml: lines were removed or changed relative to 9b63a0d (only additions are allowed)"
         fi
     fi
+    # every ToolTip in lyric components must set textFormat within its first lines: tooltips can show provider
+    # text and the PC3 ToolTip is AutoText by default (an <img> would be fetched)
+    for qf in src/contents/ui/lyrics/*.qml; do
+        [ -f "$qf" ] || continue
+        if ! awk '/ToolTip \{/ { want = NR + 6; open = 1; next } open && /textFormat: Text.PlainText/ { open = 0 } open && NR > want { print FILENAME ":" NR ": ToolTip without textFormat"; open = 0; bad = 1 } END { exit bad }' "$qf"; then
+            die "$qf has a ToolTip without textFormat: Text.PlainText"
+        fi
+    done
     # the fixtures bundle is current
     if [ -f tools/gen-fixtures.mjs ]; then
         node tools/gen-fixtures.mjs --check || die "tests/fixtures/fixtures.gen.mjs is stale: run node tools/gen-fixtures.mjs"

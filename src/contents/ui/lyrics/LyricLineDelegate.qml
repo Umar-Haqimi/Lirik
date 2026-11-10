@@ -48,7 +48,7 @@ Item {
 
     // --- outputs ---
     readonly property bool isActive: root.role === "active"
-    readonly property bool wordMode: root.isActive && root.primary && root.karaoke && !!root.words && root.words.length > 0
+    readonly property bool wordMode: root.isActive && !root.rtl && root.primary && root.karaoke && !!root.words && root.words.length > 0
     readonly property real lineOpacity: root.isActive ? C.LINE_OPACITY_ACTIVE : (root.role === "past" ? C.LINE_OPACITY_PAST : C.LINE_OPACITY_UPCOMING)
     /// Wipe position (0..1) inside the current word while a word is being drawn.
     property real wipe: 0
@@ -71,14 +71,29 @@ Item {
     }
     readonly property font _font: root._weighted(root.isActive ? Font.DemiBold : Font.Normal)
 
-    // chunks of words that a line break must not split (a syllable run without whitespace between)
+    // Right-to-left lines (Hebrew, Arabic, ...) are drawn as one plain Text, never word by word: the word
+    // wipe below assumes left-to-right order. First strong character decides.
+    readonly property bool rtl: {
+        const s = root.text
+        for (let i = 0; i < s.length; i++) {
+            const c = s.charAt(i)
+            if (/[֐-ࣿיִ-﷿ﹰ-﻿]/.test(c)) return true
+            if (/[A-Za-zÀ-ɏͰ-֏ऀ-῿぀-﬜]/.test(c)) return false
+        }
+        return false
+    }
+
+    // Chunks of words that a line break must not split (a syllable run without whitespace between). A break is
+    // allowed at whitespace and next to CJK / kana / Hangul / fullwidth characters (no spaces in those scripts).
     readonly property var _chunks: {
         const ws = root.words
         const out = []
         if (!ws) return out
+        const cjk = /[぀-ヿ㐀-鿿가-힯豈-﫿＀-￯]/
         let from = 0
         for (let i = 1; i <= ws.length; i++) {
-            if (i === ws.length || /\s$/.test(ws[i - 1].text) || /^\s/.test(ws[i].text)) {
+            if (i === ws.length || /\s$/.test(ws[i - 1].text) || /^\s/.test(ws[i].text)
+                    || cjk.test(ws[i - 1].text.slice(-1)) || cjk.test(ws[i].text.charAt(0))) {
                 out.push({ from: from, to: i - 1 })
                 from = i
             }
@@ -96,6 +111,8 @@ Item {
         const p = Math.max(0, Math.min(1, root.wordProgress))
         root.wipe = p
         if (!root.playing || root.wordRemainingMs < 1 || p >= 1) return
+        // animations off (Plasma clamps to 1 ms): no sweep, the word is filled when the next one starts
+        if (Kirigami.Units.longDuration <= C.ANIMATIONS_OFF_MAX_MS) return
         wipeAnim.from = p
         wipeAnim.to = 1
         wipeAnim.duration = root.wordRemainingMs
@@ -149,7 +166,7 @@ Item {
             color: root.color
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
-            horizontalAlignment: root.horizontalAlignment
+            horizontalAlignment: root.rtl && root.horizontalAlignment === Qt.AlignLeft ? Text.AlignRight : root.horizontalAlignment
         }
 
         Loader {
@@ -162,43 +179,67 @@ Item {
             sourceComponent: Item {
                 id: flow
 
-                // Rows are packed by hand (a Flow cannot centre its rows). A chunk never splits; a row's
-                // trailing whitespace counts neither for fitting nor for centring.
-                function layoutChunks(): void {
-                    const n = chunks.count
-                    const rowItems = []
+                // Rows are packed by hand (a Flow cannot centre its rows). The unit is a chunk of words that a
+                // line break must not split (see _chunks). A chunk wider than the row is placed word by word, so
+                // an unbroken CJK line still wraps. A row's trailing whitespace counts neither for fitting nor
+                // for centring.
+                function layoutWords(): void {
+                    const cs = root._chunks
+                    let row = []
                     let rowCount = 0
                     let lh = 0
                     let x = 0
-                    for (let i = 0; i < n; i++) {
-                        const it = chunks.itemAt(i) as ChunkRow
-                        if (it) lh = Math.max(lh, it.height)
+                    const w = flow.width
+                    for (let k = 0; k < wordsRep.count; k++) {
+                        const wi = wordsRep.itemAt(k) as WordItem
+                        if (wi) lh = Math.max(lh, wi.height)
                     }
-                    for (let i = 0; i <= n; i++) {
-                        const it = i < n ? chunks.itemAt(i) as ChunkRow : null
-                        const wraps = it && rowItems.length > 0 && x + it.width - it.trailingSpace > flow.width + 0.5
-                        if (!it || wraps) {
-                            if (rowItems.length > 0) {
-                                const last = rowItems[rowItems.length - 1]
-                                const used = x - last.trailingSpace
-                                const shift = root.horizontalAlignment === Qt.AlignHCenter ? Math.max(0, (flow.width - used) / 2) : 0
-                                for (let k = 0; k < rowItems.length; k++) {
-                                    rowItems[k].x += shift
-                                    rowItems[k].y = rowCount * lh
-                                }
-                                rowCount++
-                                rowItems.length = 0
-                                x = 0
-                            }
-                            if (!it) break
+                    function endRow(): void {
+                        if (row.length === 0) return
+                        const last = row[row.length - 1]
+                        const used = last.x + last.width - (last.fullWidth - last.trimmedWidth)
+                        const shift = root.horizontalAlignment === Qt.AlignHCenter ? Math.max(0, (w - used) / 2) : 0
+                        for (let k = 0; k < row.length; k++) {
+                            row[k].x += shift
+                            row[k].y = rowCount * lh
                         }
+                        rowCount++
+                        row = []
+                        x = 0
+                    }
+                    function place(it: WordItem): void {
                         it.x = x
                         x += it.width
-                        rowItems.push(it)
+                        row.push(it)
                     }
+                    for (let c = 0; c < cs.length; c++) {
+                        const items = []
+                        let cw = 0
+                        for (let k = cs[c].from; k <= cs[c].to; k++) {
+                            const wi = wordsRep.itemAt(k) as WordItem
+                            if (!wi) continue
+                            items.push(wi)
+                            cw += wi.width
+                        }
+                        if (items.length === 0) continue
+                        const lastItem = items[items.length - 1]
+                        const trail = lastItem.fullWidth - lastItem.trimmedWidth
+                        if (x > 0 && x + cw - trail > w + 0.5) endRow()
+                        if (cw - trail > w + 0.5) {
+                            for (let k = 0; k < items.length; k++) {
+                                const it = items[k]
+                                const t = it.fullWidth - it.trimmedWidth
+                                if (x > 0 && x + it.width - t > w + 0.5) endRow()
+                                place(it)
+                            }
+                        } else {
+                            for (let k = 0; k < items.length; k++) place(items[k])
+                        }
+                    }
+                    endRow()
                     flow.height = rowCount * lh
                 }
-                function queueLayout(): void { Qt.callLater(flow.layoutChunks) }
+                function queueLayout(): void { Qt.callLater(flow.layoutWords) }
                 width: flowLoader.width
                 onWidthChanged: flow.queueLayout()
 
@@ -206,42 +247,19 @@ Item {
                     target: root
                     function onHorizontalAlignmentChanged(): void { flow.queueLayout() }
                     function on_FontChanged(): void { flow.queueLayout() }
+                    function on_ChunksChanged(): void { flow.queueLayout() }
                 }
 
                 Repeater {
-                    id: chunks
-                    model: root._chunks
+                    id: wordsRep
+                    model: root.words ? root.words.length : 0
                     onItemAdded: flow.queueLayout()
-                    delegate: ChunkRow {
+                    delegate: WordItem {
+                        required property int index
+                        wordNumber: index
                         onWidthChanged: flow.queueLayout()
                     }
                 }
-            }
-        }
-    }
-
-    // words that a line break must not separate (a syllable run), laid out left to right
-    component ChunkRow: Row {
-        id: chunk
-        required property var modelData
-        readonly property string lastText: root.words[chunk.modelData.to].text
-        readonly property real trailingSpace: trailingTm.advanceWidth - trimmedTm.advanceWidth
-
-        TextMetrics {
-            id: trailingTm
-            font: root._font
-            text: chunk.lastText
-        }
-        TextMetrics {
-            id: trimmedTm
-            font: root._font
-            text: chunk.lastText.replace(/\s+$/, "")
-        }
-        Repeater {
-            model: chunk.modelData.to - chunk.modelData.from + 1
-            delegate: WordItem {
-                required property int index
-                wordNumber: chunk.modelData.from + index
             }
         }
     }
@@ -313,7 +331,7 @@ Item {
         Row {
             id: dotsRow
             objectName: "gapDots"
-            readonly property bool running: root.gapAfter && root.animateGap && Kirigami.Units.longDuration > 0
+            readonly property bool running: root.gapAfter && root.animateGap && Kirigami.Units.longDuration > C.ANIMATIONS_OFF_MAX_MS
             spacing: root.dotSize * 0.8
             anchors.verticalCenter: parent.verticalCenter
             x: root.horizontalAlignment === Qt.AlignHCenter ? (gapRow.width - width) / 2 : Kirigami.Units.smallSpacing + root.dotSize / 2
@@ -350,6 +368,9 @@ Item {
         enabled: root.clickable
         cursorShape: Qt.PointingHandCursor
     }
+    Accessible.role: root.clickable ? Accessible.Button : Accessible.ListItem
+    Accessible.name: root.text
+    Accessible.onPressAction: if (root.clickable) root.activated()
     TapHandler {
         enabled: root.clickable
         onTapped: root.activated()

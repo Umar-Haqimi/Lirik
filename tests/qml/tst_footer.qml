@@ -70,7 +70,8 @@ TestCase {
         compare(labels().length, 1)
         footer.credits = [{ text: "Unison", url: "https://unison.betterlyrics.org/song/abc" },
                           { text: "<b>Alice</b>", url: "https://unison.betterlyrics.org/curator/k1" }]
-        const l = labels()
+        wait(30)
+        const l = labels().sort(function (a, b) { return a.objectName < b.objectName ? -1 : 1 })
         compare(l.length, 2)
         compare(l[1].text, "<b>Alice</b>")
         compare(l[1].textFormat, Text.PlainText)
@@ -129,6 +130,68 @@ TestCase {
         compare(t.text, "Unsynced")
         footer.syncKind = ""
         compare(findChild(footer, "badge").visible, false)
+    }
+
+    function test_credit_line_is_one_translatable_sentence() {
+        footer.credits = [{ text: "LRCLIB", url: "https://lrclib.net" }]
+        compare(footer.creditPieces.length, 2)
+        compare(footer.creditPieces[0].text, "Lyrics from ")
+        compare(footer.creditPieces[1].link, 0)
+        footer.credits = [{ text: "Unison", url: "https://unison.betterlyrics.org/song/a" },
+                          { text: "Alice", url: "https://unison.betterlyrics.org/curator/k" }]
+        let s = ""
+        for (let i = 0; i < footer.creditPieces.length; i++) s += footer.creditPieces[i].text
+        compare(s, "Lyrics from Unison, submitted by Alice")
+    }
+
+    function test_links_activate_from_the_keyboard() {
+        footer.credits = [{ text: "LRCLIB", url: "https://lrclib.net" }]
+        wait(30)
+        const l = labels()[0]
+        compare(l.activeFocusOnTab, true)
+        compare(l.Accessible.role, Accessible.Link)
+        l.forceActiveFocus()
+        keyClick(Qt.Key_Return)
+        keyClick(Qt.Key_Space)
+        compare(opened, ["https://lrclib.net", "https://lrclib.net"])
+        // an unsafe link is neither focusable nor activatable
+        footer.credits = [{ text: "Evil", url: "https://evil.example" }]
+        wait(30)
+        compare(labels()[0].activeFocusOnTab, false)
+    }
+
+    function test_offset_reset_from_the_keyboard() {
+        const v = findChild(footer, "offsetValue")
+        compare(v.Accessible.role, Accessible.Button)
+        let n = 0
+        footer.offsetResetRequested.connect(function () { n++ })
+        v.forceActiveFocus()
+        keyClick(Qt.Key_Return)
+        keyClick(Qt.Key_Space)
+        compare(n, 2)
+    }
+
+    function test_offset_buttons_stop_at_the_limits() {
+        footer.offsetMs = 5000
+        compare(findChild(footer, "offsetPlus").enabled, false)
+        compare(findChild(footer, "offsetMinus").enabled, true)
+        footer.offsetMs = -5000
+        compare(findChild(footer, "offsetMinus").enabled, false)
+        compare(findChild(footer, "offsetPlus").enabled, true)
+    }
+
+    function test_tooltips_are_plain_text() {
+        function walk(it, out) {
+            for (let k = 0; k < it.data.length; k++) {
+                const c = it.data[k]
+                if (c.hasOwnProperty("textFormat") && c.hasOwnProperty("delay")) out.push(c)
+                if (c.data) walk(c, out)
+            }
+        }
+        const tips = []
+        walk(footer, tips)
+        verify(tips.length >= 3, "found tooltips: " + tips.length)
+        for (let i = 0; i < tips.length; i++) compare(tips[i].textFormat, Text.PlainText)
     }
 
     function test_menu_items() {

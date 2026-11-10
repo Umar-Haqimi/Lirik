@@ -275,17 +275,30 @@ TestCase {
         compare(child("messageText").text, "Lyrics providers are busy. Retrying in 12 s")
         panel.retryInS = 11
         compare(child("messageText").text, "Lyrics providers are busy. Retrying in 11 s")
-        panel.errorText = "http"
+        panel.errorCode = "http"
+        panel.errorProvider = "lrclib"
+        panel.errorStatus = 503
         panel.errorDetail = "lrclib (HTTP 503)"
         panel.status = "error"
-        compare(child("errorTip").text, "The provider answered with an error (lrclib (HTTP 503))")
+        compare(child("errorTip").text, "LRCLIB answered with HTTP 503 (lrclib (HTTP 503))")
         verify(child("errorTip").text.indexOf("http") !== 0, "never the raw code")
-        panel.errorText = "timeout"
-        compare(child("errorTip").text, "The provider took too long to answer (lrclib (HTTP 503))")
-        panel.errorText = "network"
+        compare(child("retryButton").Accessible.description, child("errorTip").text)
+        panel.errorCode = "timeout"
+        compare(child("errorTip").text, "LRCLIB did not answer in time (lrclib (HTTP 503))")
+        panel.errorCode = "network"
+        panel.errorProvider = "unison"
         panel.errorDetail = ""
-        compare(child("errorTip").text, "Couldn't connect to the provider")
+        compare(child("errorTip").text, "Could not connect to Unison")
+        // provider words never become rich text (an <img> in the detail would be fetched)
+        panel.errorDetail = "lrclib: <img src=http://127.0.0.1:9/x>"
+        compare(child("errorTip").textFormat, Text.PlainText)
+        verify(child("errorTip").text.indexOf("<img") > 0)
+        // the compatibility alias still works
+        panel.errorCode = ""
+        panel.errorText = "timeout"
+        compare(child("errorTip").text.indexOf("Unison did not answer in time"), 0)
         panel.errorText = ""
+        panel.errorDetail = ""
         panel.hasMedia = false
         wait(30)
         compare(child("messageText").text, "")
@@ -326,5 +339,191 @@ TestCase {
         compare(child("busyNotice").text, "Lyrics providers are busy. Retrying in 7 s")
         panel.retryInS = null
         compare(child("busyNotice").visible, false)
+    }
+
+    function test_scrollbar_drag_suspends() {
+        setLong()
+        panel.resumeDelayMs = 60000
+        wait(50)
+        frame("line", 5, 5, 6)
+        wait(500)
+        const vb = child("vbar")
+        verify(vb !== null, "vertical scroll bar")
+        verify(panel.following)
+        vb.pressed = true
+        vb.pressed = false
+        verify(!panel.following, "a scroll bar press suspends following")
+        panel.resume()
+        verify(panel.following)
+        vb.pressed = true
+        vb.position = 0.5
+        verify(!panel.following, "moving the pressed scroll bar suspends too")
+        vb.pressed = false
+    }
+
+    function test_click_target_is_followed_until_primary_changes() {
+        setLong()
+        panel.resumeDelayMs = 60000
+        wait(50)
+        frame("line", 5, 5, 6)
+        wait(500)
+        panel.activateLine(9)
+        compare(seeks.length, 1)
+        compare(panel.lyrics.lines[9].start, seeks[0])
+        compare(panel._followTarget().index, 9, "follows the clicked line, not the old primary")
+        wait(700)
+        const it = panel.listView.itemAtIndex(9)
+        verify(Math.abs(it.y + it.height / 2 - panel.listView.contentY - panel.listView.height * 0.38) < 6)
+        frame("line", 9, 9, 10)
+        compare(panel._clickIndex, -1)
+        compare(panel._followTarget().index, 9)
+        // after the timeout the click target is dropped too
+        panel.activateLine(12)
+        compare(panel._followTarget().index, 12)
+        tryCompare(panel, "_clickIndex", -1, 3000)
+    }
+
+    function test_enter_seeks_to_the_current_line() {
+        frame("line", 2, 2, 3)
+        wait(300)
+        panel.listView.forceActiveFocus()
+        keyClick(Qt.Key_Return)
+        compare(seeks, [panel.lyrics.lines[2].start])
+        panel.canSeek = false
+        keyClick(Qt.Key_Space)
+        compare(seeks.length, 1)
+    }
+
+    function test_line_delegates_are_accessible() {
+        frame("line", 1, 1, 2)
+        wait(100)
+        const d = panel.listView.itemAtIndex(2)
+        compare(d.Accessible.name, panel.lyrics.lines[2].text)
+        compare(d.Accessible.role, Accessible.Button)
+        panel.canSeek = false
+        compare(d.Accessible.role, Accessible.ListItem)
+    }
+
+    function test_word_fields_reach_only_the_primary_delegate() {
+        panel.lyrics = Data.wordLyrics()
+        panel.syncKind = "word"
+        wait(50)
+        frame("line", 1, 1, 2)
+        panel.wordIndex = 2
+        panel.wordProgress = 0.5
+        panel.wordRemainingMs = 400
+        wait(100)
+        compare(panel.listView.itemAtIndex(1).wordIndex, 2)
+        compare(panel.listView.itemAtIndex(0).wordIndex, -1)
+        compare(panel.listView.itemAtIndex(0).wordRemainingMs, 0)
+        compare(panel.listView.itemAtIndex(2).playing, false)
+        compare(panel.listView.itemAtIndex(1).playing, true)
+    }
+
+    function test_message_font_handles_pixel_sized_fonts() {
+        panel.status = "instrumental"
+        panel.baseFont = Qt.font({ pixelSize: 20 })
+        verify(panel.messageFont.pixelSize >= 27 && panel.messageFont.pixelSize <= 29, "pixel size scaled: " + panel.messageFont.pixelSize)
+        panel.baseFont = Qt.font({ pointSize: 10 })
+        compare(panel.messageFont.pointSize, 14)
+        panel.status = "notfound"
+        compare(panel.messageFont.pointSize, 10)
+    }
+
+    // --- long lines in the word view ---
+
+    // synthetic kana-like text (invented, not lyrics), one word per character, no spaces anywhere
+    function kanaLine(n) {
+        const base = "あいうえおかきくけこ"
+        const words = []
+        let text = ""
+        for (let i = 0; i < n; i++) {
+            const ch = base.charAt(i % base.length)
+            words.push({ text: ch, start: 1000 + i * 100, end: 1100 + i * 100 })
+            text += ch
+        }
+        return { start: 1000, end: 1000 + n * 100, text: text, words: words }
+    }
+
+    Component {
+        id: delegateComp
+        LyricLineDelegate {
+            width: 200
+            role: "active"
+            primary: true
+            karaoke: true
+            playing: false
+            wordIndex: 5
+            wordProgress: 0.5
+            font: Qt.font({ pointSize: 11 })
+        }
+    }
+
+    function test_cjk_line_wraps_inside_the_row() {
+        const l = kanaLine(40)
+        const d = createTemporaryObject(delegateComp, tc, { text: l.text, words: l.words })
+        wait(100)
+        compare(d.rtl, false)
+        compare(d.wordMode, true)
+        verify(d._chunks.length === 40, "a break is allowed between kana: " + d._chunks.length)
+        const flow = d.wordFlow
+        verify(flow !== null)
+        let maxRight = 0
+        let rows = {}
+        for (let i = 0; i < flow.children.length; i++) {
+            const c = flow.children[i]
+            if (c.hasOwnProperty("wordNumber")) {
+                maxRight = Math.max(maxRight, c.x + c.width)
+                rows[Math.round(c.y)] = true
+            }
+        }
+        verify(maxRight <= 200 - 8 + 1, "words stay inside the row, right edge " + maxRight)
+        verify(Object.keys(rows).length > 1, "the line wrapped onto several rows")
+    }
+
+    function test_oversize_chunk_is_placed_word_by_word() {
+        // one syllable run without any break opportunity, wider than the row: Latin letters, no whitespace
+        const words = []
+        let text = ""
+        for (let i = 0; i < 30; i++) {
+            words.push({ text: "ab", start: 1000 + i * 100, end: 1100 + i * 100 })
+            text += "ab"
+        }
+        const d = createTemporaryObject(delegateComp, tc, { text: text, words: words })
+        wait(100)
+        compare(d._chunks.length, 1)
+        const flow = d.wordFlow
+        let maxRight = 0
+        for (let i = 0; i < flow.children.length; i++) {
+            const c = flow.children[i]
+            if (c.hasOwnProperty("wordNumber")) maxRight = Math.max(maxRight, c.x + c.width)
+        }
+        verify(maxRight <= 200 - 8 + 1, "right edge " + maxRight)
+    }
+
+    function test_rtl_line_is_plain_text_without_wipe() {
+        // invented Hebrew-script letters, not lyrics
+        const text = "אבג דהו זחט"
+        const words = [{ text: "אבג ", start: 1000, end: 1500 }, { text: "דהו ", start: 1500, end: 2000 }, { text: "זחט", start: 2000, end: 2500 }]
+        const d = createTemporaryObject(delegateComp, tc, { text: text, words: words })
+        wait(50)
+        compare(d.rtl, true)
+        compare(d.wordMode, false)
+        compare(d.plainText.visible, true)
+        compare(d.plainText.text, text)
+        compare(d.plainText.horizontalAlignment, Text.AlignRight)
+        compare(d.lineOpacity, 1.0)
+        // Arabic range and a Latin line
+        d.text = "ابت"
+        compare(d.rtl, true)
+        d.text = "  123 abc א"
+        compare(d.rtl, false)
+    }
+
+    function test_latin_syllables_do_not_split_inside_a_word() {
+        const words = [{ text: "Hel", start: 0, end: 100 }, { text: "lo ", start: 100, end: 200 }, { text: "world", start: 200, end: 300 }]
+        const d = createTemporaryObject(delegateComp, tc, { text: "Hello world", words: words })
+        compare(d._chunks.length, 2)
+        compare(d._chunks[0].to, 1)
     }
 }

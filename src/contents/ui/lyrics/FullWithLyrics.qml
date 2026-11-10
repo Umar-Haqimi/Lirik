@@ -4,6 +4,7 @@ import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import ".."
 import "../../code/constants.mjs" as C
+import "../../code/sidepanel.mjs" as SidePanel
 
 // qmllint disable unqualified
 // Lays out the lyrics side panel next to upstream's Full.qml (docs/DECISIONS.md D13).
@@ -22,15 +23,18 @@ RowLayout {
     readonly property int side: root.lyricsOn ? plasmoid.configuration.lyricsSidePanelPosition : 0
     readonly property bool panelOn: root.side === 1 || root.side === 2
     readonly property bool desktop: widget.formFactor === PlasmaCore.Types.Planar
-    readonly property int panelWidth: plasmoid.configuration.lyricsSidePanelWidth
+    readonly property int panelWidth: SidePanel.clampPanelWidth(plasmoid.configuration.lyricsSidePanelWidth)
+    /// The panel shows (and the timeline runs for it): freeze its frame inputs while the popup is closed.
+    readonly property bool live: widget.lyricsSurfaceFull
     readonly property real separatorWidth: 1
 
     spacing: 0
-    layoutDirection: root.side === 2 ? Qt.RightToLeft : Qt.LeftToRight
+    // the panel sits physically left/right even in a mirrored (RTL) locale
+    layoutDirection: (root.side === 2) !== LayoutMirroring.enabled ? Qt.RightToLeft : Qt.LeftToRight
 
-    Layout.minimumWidth: full.Layout.minimumWidth + (root.panelOn ? (root.desktop ? 200 : root.panelWidth) + root.separatorWidth : 0)
+    Layout.minimumWidth: full.Layout.minimumWidth + (root.panelOn ? (root.desktop ? C.SIDE_PANEL_MIN_WIDTH : root.panelWidth) + root.separatorWidth : 0)
     Layout.preferredWidth: full.Layout.preferredWidth + (root.panelOn ? root.panelWidth + root.separatorWidth : 0)
-    Layout.maximumWidth: root.desktop ? Infinity : full.Layout.maximumWidth + (root.panelOn ? root.panelWidth + root.separatorWidth : 0)
+    Layout.maximumWidth: root.desktop && root.panelOn ? Infinity : full.Layout.maximumWidth + (root.panelOn ? root.panelWidth + root.separatorWidth : 0)
     Layout.minimumHeight: root.panelOn ? Math.max(full.Layout.preferredHeight, C.SIDE_PANEL_MIN_HEIGHT) : full.Layout.minimumHeight
     Layout.preferredHeight: root.panelOn ? Math.max(full.Layout.preferredHeight, C.SIDE_PANEL_MIN_HEIGHT) : full.Layout.preferredHeight
     Layout.maximumHeight: root.desktop && root.panelOn ? Infinity : (root.panelOn ? Math.max(full.Layout.preferredHeight, C.SIDE_PANEL_MIN_HEIGHT) : full.Layout.maximumHeight)
@@ -41,7 +45,7 @@ RowLayout {
         Layout.fillHeight: true
         Layout.fillWidth: root.desktop
         Layout.preferredWidth: root.panelWidth
-        Layout.minimumWidth: root.desktop ? 200 : root.panelWidth
+        Layout.minimumWidth: root.desktop ? C.SIDE_PANEL_MIN_WIDTH : root.panelWidth
         Layout.maximumWidth: root.desktop ? Infinity : root.panelWidth
 
         hasMedia: player.ready
@@ -50,23 +54,17 @@ RowLayout {
         syncKind: lyricsController.syncKind
         showLoading: lyricsController.showLoading
         retryInS: lyricsController.retryInS
-        errorText: lyricsController.errorText
+        errorCode: lyricsController.errorCode
+        errorProvider: lyricsController.errorProvider
+        errorStatus: lyricsController.errorStatus
         errorDetail: lyricsController.errorDetail
         credits: lyricsController.credits
         offsetMs: lyricsController.offsetMs
         alternatesCount: lyricsController.alternatesCount
 
-        frameState: lyricsTimeline.state
-        activeLines: lyricsTimeline.activeLines
-        primary: lyricsTimeline.primary
-        last: lyricsTimeline.last
-        upcoming: lyricsTimeline.upcoming
-        wordIndex: lyricsTimeline.wordIndex
-        wordProgress: lyricsTimeline.wordProgress
-        wordRemainingMs: lyricsTimeline.wordRemainingMs
-        frameSerial: lyricsTimeline.frameSerial
-
-        playing: playbackClock.isPlaying
+        // the timeline frame is only followed while the panel is showing: with the popup closed the panel keeps
+        // its last frame and nothing recomputes (RestoreNone: the values stay when `when` turns false)
+        playing: root.live && playbackClock.isPlaying
         canSeek: player.canSeek
         karaoke: plasmoid.configuration.lyricsKaraokeInFullView
         textAlignment: plasmoid.configuration.lyricsTextAlignment
@@ -85,6 +83,16 @@ RowLayout {
         onOffsetNudged: delta => lyricsController.nudgeOffset(delta)
         onOffsetResetRequested: lyricsController.resetOffset()
     }
+
+    Binding { target: panel; property: "frameState"; value: lyricsTimeline.state; when: root.live; restoreMode: Binding.RestoreNone }
+    Binding { target: panel; property: "activeLines"; value: lyricsTimeline.activeLines; when: root.live; restoreMode: Binding.RestoreNone }
+    Binding { target: panel; property: "primary"; value: lyricsTimeline.primary; when: root.live; restoreMode: Binding.RestoreNone }
+    Binding { target: panel; property: "last"; value: lyricsTimeline.last; when: root.live; restoreMode: Binding.RestoreNone }
+    Binding { target: panel; property: "upcoming"; value: lyricsTimeline.upcoming; when: root.live; restoreMode: Binding.RestoreNone }
+    Binding { target: panel; property: "wordIndex"; value: lyricsTimeline.wordIndex; when: root.live; restoreMode: Binding.RestoreNone }
+    Binding { target: panel; property: "wordProgress"; value: lyricsTimeline.wordProgress; when: root.live; restoreMode: Binding.RestoreNone }
+    Binding { target: panel; property: "wordRemainingMs"; value: lyricsTimeline.wordRemainingMs; when: root.live; restoreMode: Binding.RestoreNone }
+    Binding { target: panel; property: "frameSerial"; value: lyricsTimeline.frameSerial; when: root.live; restoreMode: Binding.RestoreNone }
 
     Kirigami.Separator {
         visible: root.panelOn

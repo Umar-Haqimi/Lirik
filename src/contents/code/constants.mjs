@@ -77,6 +77,12 @@ export const LINE_OPACITY_ACTIVE = 1.0
 export const LINE_OPACITY_UPCOMING = 0.6
 export const LINE_OPACITY_PAST = 0.4
 export const SIDE_PANEL_MIN_HEIGHT = 320
+export const SIDE_PANEL_MIN_WIDTH = 200 // also the narrowest a desktop panel may get
+export const SIDE_PANEL_MAX_WIDTH = 600
+// Plasma never sets durations to 0: with animations off the clamp is 1 ms (libplasma units.cpp); KDE code tests > 1.
+export const ANIMATIONS_OFF_MAX_MS = 1
+// After clicking a line, follow that line (not the old primary) for at most this long.
+export const CLICK_FOLLOW_MS = 1500
 
 // --- Providers --------------------------------------------------------------
 export const LRCLIB_BASE = "https://lrclib.net"

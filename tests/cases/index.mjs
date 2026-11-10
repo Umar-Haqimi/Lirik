@@ -14,6 +14,7 @@ import { cases as trackinfo } from "./trackinfo.cases.mjs"
 import { cases as match } from "./match.cases.mjs"
 import { cases as providers } from "./providers.cases.mjs"
 import { cases as resolver } from "./resolver.cases.mjs"
+import { cases as sidepanel } from "./sidepanel.cases.mjs"
 
 export const suites = [
     ["smoke", smoke],
@@ -30,6 +31,7 @@ export const suites = [
     ["match", match],
     ["providers", providers],
     ["resolver", resolver],
+    ["sidepanel", sidepanel],
 ]
 
 export function allCases() {

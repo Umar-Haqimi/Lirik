@@ -53,6 +53,9 @@ QtObject {
     /// Same value as errorCode (kept for the views written against the old name); never translated here.
     property string errorText: ""
     /// Provider and HTTP status for tooltips; plain text, may contain provider text.
+    /// Provider id ("lrclib" | "unison") and HTTP status (0 when none) of the failure, for translated copy in the views.
+    property string errorProvider: ""
+    property int errorStatus: 0
     property string errorDetail: ""
     property string skipReason: ""
     property string trackKey: ""
@@ -161,12 +164,16 @@ QtObject {
             // No translatable text here (bin/i18n only extracts i18n*): a stable code the view turns into i18n text.
             const code = s.error.status > 0 ? "http" : (/timeout/i.test(String(s.error.message)) ? "timeout" : "network")
             root.errorCode = code
+            root.errorProvider = s.error.provider ? String(s.error.provider) : ""
+            root.errorStatus = s.error.status > 0 ? s.error.status : 0
             root.errorText = code
             const st = s.error.status > 0 ? " (HTTP " + s.error.status + ")" : ""
             const msg = s.error.message ? ": " + String(s.error.message).slice(0, 120) : ""
             root.errorDetail = String(s.error.provider) + st + msg
         } else {
             root.errorCode = ""
+            root.errorProvider = ""
+            root.errorStatus = 0
             root.errorText = ""
             root.errorDetail = ""
         }

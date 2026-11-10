@@ -61,6 +61,29 @@ Item {
         return out
     }
     readonly property bool hasCredits: root.creditLinks.length > 0
+    /// The credit line as plain-text pieces: [{ text, link }] where link is the index into creditLinks (or -1).
+    /// One translatable sentence ("Lyrics from %1, submitted by %2"), split on its placeholders so the provider
+    /// and the submitter stay separate link items (a translation may reorder them).
+    readonly property var creditPieces: {
+        const links = root.creditLinks
+        if (links.length === 0) return []
+        const fmt = links.length > 1
+            ? i18nc("@info credit line; %1 is the lyrics provider, %2 the person who submitted them", "Lyrics from %1, submitted by %2")
+            : i18nc("@info credit line; %1 is the lyrics provider", "Lyrics from %1")
+        const parts = String(fmt).split(/(%[12])/)
+        const out = []
+        for (let i = 0; i < parts.length; i++) {
+            const p = parts[i]
+            if (p === "") continue
+            if (p === "%1" || p === "%2") {
+                const k = p === "%1" ? 0 : 1
+                if (k < links.length) out.push({ text: links[k].text, link: k })
+            } else {
+                out.push({ text: p, link: -1 })
+            }
+        }
+        return out
+    }
 
     implicitHeight: column.implicitHeight + Kirigami.Units.smallSpacing * 2
     implicitWidth: column.implicitWidth
@@ -124,44 +147,42 @@ Item {
             Layout.rightMargin: Kirigami.Units.smallSpacing
             spacing: 0
 
-            PlasmaComponents3.Label {
-                text: i18nc("@info credit prefix, followed by the provider name", "Lyrics from") + " "
-                textFormat: Text.PlainText
-                font: Kirigami.Theme.smallFont
-                color: Kirigami.Theme.textColor
-                opacity: 0.8
-            }
             Repeater {
-                model: root.creditLinks
-                delegate: Row {
-                    id: creditItem
+                model: root.creditPieces
+                delegate: PlasmaComponents3.Label {
+                    id: piece
                     required property var modelData
-                    required property int index
-                    PlasmaComponents3.Label {
-                        visible: !creditItem.modelData.primary
-                        text: " " + i18nc("@info separates the provider from the submitter's name, e.g. \"Lyrics from Unison, submitted by Alice\"", "submitted by") + " "
-                        textFormat: Text.PlainText
-                        font: Kirigami.Theme.smallFont
-                        color: Kirigami.Theme.textColor
-                        opacity: 0.8
+                    readonly property bool isLink: piece.modelData.link >= 0
+                    readonly property var credit: piece.isLink ? root.creditLinks[piece.modelData.link] : null
+                    readonly property bool safe: !!piece.credit && piece.credit.safe
+                    objectName: piece.isLink ? "creditLink" + piece.modelData.link : ""
+                    text: piece.modelData.text
+                    textFormat: Text.PlainText
+                    font.family: Kirigami.Theme.smallFont.family
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    font.underline: piece.safe
+                    color: piece.safe ? Kirigami.Theme.linkColor : Kirigami.Theme.textColor
+                    opacity: piece.isLink ? 1.0 : 0.8
+                    activeFocusOnTab: piece.safe
+                    Accessible.role: piece.safe ? Accessible.Link : Accessible.StaticText
+                    Accessible.name: piece.modelData.text
+                    Accessible.onPressAction: if (piece.safe) root.openLink(piece.credit.url)
+                    Keys.onReturnPressed: if (piece.safe) root.openLink(piece.credit.url)
+                    Keys.onSpacePressed: if (piece.safe) root.openLink(piece.credit.url)
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "transparent"
+                        border.width: 1
+                        border.color: Kirigami.Theme.highlightColor
+                        visible: piece.activeFocus
                     }
-                    PlasmaComponents3.Label {
-                        id: linkLabel
-                        objectName: "creditLink" + creditItem.index
-                        text: creditItem.modelData.text
-                        textFormat: Text.PlainText
-                        font.family: Kirigami.Theme.smallFont.family
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        font.underline: creditItem.modelData.safe
-                        color: creditItem.modelData.safe ? Kirigami.Theme.linkColor : Kirigami.Theme.textColor
-                        HoverHandler {
-                            enabled: creditItem.modelData.safe
-                            cursorShape: Qt.PointingHandCursor
-                        }
-                        TapHandler {
-                            enabled: creditItem.modelData.safe
-                            onTapped: root.openLink(creditItem.modelData.url)
-                        }
+                    HoverHandler {
+                        enabled: piece.safe
+                        cursorShape: Qt.PointingHandCursor
+                    }
+                    TapHandler {
+                        enabled: piece.safe
+                        onTapped: root.openLink(piece.credit.url)
                     }
                 }
             }
@@ -207,10 +228,12 @@ Item {
                     icon.name: "list-remove"
                     display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18nc("@action:button", "Show lyrics earlier")
+                    enabled: root.offsetMs > C.OFFSET_MIN_MS
                     onClicked: root.nudgeBy(-1)
                     ShiftProbe { }
                     PlasmaComponents3.ToolTip {
                         text: i18n("Lyrics earlier by 0.1 s (Shift: 0.5 s)")
+                        textFormat: Text.PlainText
                         visible: minusBtn.hovered
                     }
                 }
@@ -229,9 +252,16 @@ Item {
                         text: "−5.0 s"
                     }
                     HoverHandler { id: offsetHover; cursorShape: Qt.PointingHandCursor }
+                    activeFocusOnTab: true
+                    Accessible.role: Accessible.Button
+                    Accessible.name: i18n("Reset the offset")
+                    Accessible.onPressAction: root.offsetResetRequested()
+                    Keys.onReturnPressed: root.offsetResetRequested()
+                    Keys.onSpacePressed: root.offsetResetRequested()
                     TapHandler { onTapped: root.offsetResetRequested() }
                     PlasmaComponents3.ToolTip {
                         text: i18n("Click to reset the offset")
+                        textFormat: Text.PlainText
                         visible: offsetHover.hovered
                     }
                 }
@@ -241,10 +271,12 @@ Item {
                     icon.name: "list-add"
                     display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18nc("@action:button", "Show lyrics later")
+                    enabled: root.offsetMs < C.OFFSET_MAX_MS
                     onClicked: root.nudgeBy(1)
                     ShiftProbe { }
                     PlasmaComponents3.ToolTip {
                         text: i18n("Lyrics later by 0.1 s (Shift: 0.5 s)")
+                        textFormat: Text.PlainText
                         visible: plusBtn.hovered
                     }
                 }
@@ -261,6 +293,7 @@ Item {
                 onClicked: menu.open()
                 PlasmaComponents3.ToolTip {
                     text: menuButton.text
+                    textFormat: Text.PlainText
                     visible: menuButton.hovered && !menu.visible
                 }
 

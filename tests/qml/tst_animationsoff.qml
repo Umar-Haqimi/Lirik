@@ -91,10 +91,10 @@ TestCase {
         if (stubbed) Kirigami.Units.animationsOff = false
     }
 
-    function test_units_are_zero() {
-        compare(Kirigami.Units.shortDuration, 0)
-        compare(Kirigami.Units.longDuration, 0)
-        compare(Kirigami.Units.veryLongDuration, 0)
+    function test_units_are_clamped_to_one() {
+        compare(Kirigami.Units.shortDuration, 1)
+        compare(Kirigami.Units.longDuration, 1)
+        compare(Kirigami.Units.veryLongDuration, 2)
     }
 
     function test_karaoke_wipe_jumps_and_never_sweeps() {
@@ -159,6 +159,33 @@ TestCase {
         verify(y > 0, "followed the active line")
         wait(250)
         compare(panel.listView.contentY, y, "arrived by jumping, nothing still scrolling")
+    }
+
+    Component {
+        id: delegateComp
+        LyricLineDelegate {
+            width: 240
+            role: "active"
+            primary: true
+            font: Qt.font({ pointSize: 11 })
+        }
+    }
+
+    function test_side_panel_word_wipe_jumps_per_word() {
+        const l = Data.wordLyrics().lines[0]
+        const d = createTemporaryObject(delegateComp, tc, { text: l.text, words: l.words, playing: true })
+        d.wordIndex = 1
+        d.wordProgress = 0.25
+        d.wordRemainingMs = 450
+        wait(60)
+        compare(d.wipe, 0.25)
+        wait(300)
+        compare(d.wipe, 0.25, "no sweep: the word is filled when the next one starts")
+        d.wordIndex = 2
+        d.wordProgress = 0
+        d.wordRemainingMs = 350
+        wait(60)
+        compare(d.wipe, 0)
     }
 
     function test_compact_crossfade_is_instant() {

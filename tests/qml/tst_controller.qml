@@ -323,6 +323,8 @@ TestCase {
         compare(ctl.status, "error")
         compare(ctl.errorCode, "http")
         compare(ctl.errorText, "http")
+        compare(ctl.errorProvider, "lrclib")
+        compare(ctl.errorStatus, 500)
     }
 
     function test_countdown_follows_the_resolver_deadline() {

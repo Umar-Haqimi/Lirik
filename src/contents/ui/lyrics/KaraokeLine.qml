@@ -127,8 +127,8 @@ Item {
         root.wipeX = wx0
         root.panX = p0
         if (!root.playing || dur < 1 || (wx1 === wx0 && p1 === p0)) return
-        // Animations switched off in the desktop settings: no sweep, the wipe and the pan jump at each word change.
-        if (Kirigami.Units.longDuration === 0) return
+        // Animations switched off in the desktop settings (Plasma clamps the durations to 1 ms, never 0): no sweep, the wipe and the pan jump at each word change.
+        if (Kirigami.Units.longDuration <= C.ANIMATIONS_OFF_MAX_MS) return
         root._wipeAnim.from = wx0
         root._wipeAnim.to = wx1
         root._wipeAnim.duration = dur

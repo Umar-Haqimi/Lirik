@@ -38,8 +38,13 @@ Item {
     /// Seconds until the rate-limit retry (a number) or null.
     property var retryInS: null
     /// An i18n-free error CODE from the controller ("network" | "timeout" | "http"); never shown raw (see errorTipText).
+    property string errorCode: ""
+    /// Compatibility alias for `errorCode` (the controller's older name); used when errorCode is empty.
     property string errorText: ""
-    /// Provider and HTTP status; plain text, shown as the tooltip of the error state.
+    /// Provider id ("lrclib" | "unison") and HTTP status of the failure, for the translated tooltip copy.
+    property string errorProvider: ""
+    property int errorStatus: 0
+    /// Technical detail (provider, status, message); plain text, appended to the tooltip of the error state.
     property string errorDetail: ""
     /// [{ text, url }] from the provider mapper.
     property var credits: []
@@ -89,16 +94,23 @@ Item {
     readonly property bool hasLines: !!root.lyrics && !!root.lyrics.lines && root.lyrics.lines.length > 0
     /// Tooltip of the error state: translated copy for the error code, plus provider and HTTP status.
     readonly property string errorTipText: {
-        if (root.errorText === "" && root.errorDetail === "") return ""
+        const code = root.errorCode !== "" ? root.errorCode : root.errorText
+        if (code === "" && root.errorDetail === "") return ""
+        const p = root.errorProvider === "lrclib" ? "LRCLIB" : (root.errorProvider === "unison" ? "Unison"
+            : (root.errorProvider !== "" ? root.errorProvider : i18nc("@info generic provider name", "the lyrics provider")))
         let copy
-        switch (root.errorText) {
-        case "timeout": copy = i18n("The provider took too long to answer"); break
-        case "http": copy = i18n("The provider answered with an error"); break
-        case "network": copy = i18n("Couldn't connect to the provider"); break
+        switch (code) {
+        case "timeout": copy = i18nc("@info tooltip; %1 is a lyrics provider", "%1 did not answer in time", p); break
+        case "http": copy = i18nc("@info tooltip; %1 is a lyrics provider, %2 an HTTP status code", "%1 answered with HTTP %2", p, root.errorStatus); break
+        case "network": copy = i18nc("@info tooltip; %1 is a lyrics provider", "Could not connect to %1", p); break
         default: copy = i18n("The lookup failed")
         }
-        return root.errorDetail !== "" ? i18n("%1 (%2)", copy, root.errorDetail) : copy
+        return root.errorDetail !== "" ? i18nc("@info tooltip: message, then technical detail", "%1 (%2)", copy, root.errorDetail) : copy
     }
+
+    // After a click on a line the view follows that line until the timeline's primary changes (or briefly).
+    property int _clickIndex: -1
+    property int _clickPrimary: -1
 
     /// "empty" | "lines" | "plain" | "loading" | "instrumental" | "notfound" | "error" | "ratelimited" | "skipped"
     readonly property string mode: {
@@ -135,6 +147,15 @@ Item {
         else o.pixelSize = Math.round(f.pixelSize * root.fontScale)
         return Qt.font(o)
     }
+    /// Font of the message states; "♪ Instrumental" is larger. Handles pixel-sized fonts (pointSize is -1 there).
+    readonly property font messageFont: {
+        const f = root.baseFont
+        const k = root.mode === "instrumental" ? 1.4 : 1.0
+        const o = { family: f.family, italic: f.italic }
+        if (f.pointSize > 0) o.pointSize = f.pointSize * k
+        else o.pixelSize = Math.round(f.pixelSize * k)
+        return Qt.font(o)
+    }
     readonly property ListView listView: lv
     readonly property LyricsFooter footer: footerItem
     readonly property bool animateGap: root.playing && root.visible && (!root.Window.window || root.Window.window.visible)
@@ -160,6 +181,7 @@ Item {
     function _clamp(v: real, lo: real, hi: real): real { return v < lo ? lo : (v > hi ? hi : v) }
 
     function _followTarget(): var {
+        if (root._clickIndex >= 0 && root.primary === root._clickPrimary) return { index: root._clickIndex, gap: false }
         switch (root.frameState) {
         case "line":
             if (root.primary >= 0) return { index: root.primary, gap: false }
@@ -196,7 +218,7 @@ Item {
         const current = scrollAnim.running ? scrollAnim.to : lv.contentY
         if (Math.abs(y - current) < 1) return
         scrollAnim.stop()
-        if (anim && Kirigami.Units.longDuration > 0) {
+        if (anim && Kirigami.Units.longDuration > C.ANIMATIONS_OFF_MAX_MS) {
             scrollAnim.from = lv.contentY
             scrollAnim.to = y
             scrollAnim.start()
@@ -221,7 +243,20 @@ Item {
         root._queueFollow()
     }
 
-    onPrimaryChanged: root._queueFollow()
+    /// Seek to a line and keep it in view until the timeline catches up.
+    function activateLine(index: int): void {
+        if (!root.canSeek || !root.hasLines || index < 0 || index >= root.lyrics.lines.length) return
+        root._clickIndex = index
+        root._clickPrimary = root.primary
+        clickTimer.restart()
+        root.resume()
+        root.seekRequested(root.lyrics.lines[index].start)
+    }
+
+    onPrimaryChanged: {
+        if (root.primary !== root._clickPrimary) root._clickIndex = -1
+        root._queueFollow()
+    }
     onFrameStateChanged: root._queueFollow()
     onLastChanged: root._queueFollow()
     onUpcomingChanged: root._queueFollow()
@@ -246,6 +281,16 @@ Item {
                 return
             }
             root.resume()
+        }
+    }
+
+    Timer {
+        id: clickTimer
+        interval: C.CLICK_FOLLOW_MS
+        repeat: false
+        onTriggered: {
+            root._clickIndex = -1
+            root._queueFollow()
         }
     }
 
@@ -298,6 +343,16 @@ Item {
 
                 QQC.ScrollBar.vertical: PlasmaComponents3.ScrollBar {
                     id: vbar
+                    objectName: "vbar"
+                    // dragging the scroll bar is a manual scroll too (it does not set `moving`)
+                    onPressedChanged: if (pressed) root.userScrolled()
+                    onPositionChanged: if (pressed) root.userScrolled()
+                }
+
+                // wheel speed follows KDE's setting; the handler scrolls without setting `moving`
+                Kirigami.WheelHandler {
+                    target: lv
+                    onWheel: root.userScrolled()
                 }
 
                 // room above the first and below the last line, so each can sit at the anchor
@@ -321,11 +376,12 @@ Item {
                     role: root.roleOf(index)
                     primary: root.frameState === "line" && index === root.primary
                     karaoke: root.karaoke
-                    wordIndex: root.wordIndex
-                    wordProgress: root.wordProgress
-                    wordRemainingMs: root.wordRemainingMs
-                    playing: root.playing
-                    frameSerial: root.frameSerial
+                    // the frame's word fields describe the primary line only; the others never recompute per word
+                    wordIndex: primary ? root.wordIndex : -1
+                    wordProgress: primary ? root.wordProgress : 0
+                    wordRemainingMs: primary ? root.wordRemainingMs : 0
+                    playing: primary && root.playing
+                    frameSerial: primary ? root.frameSerial : 0
                     font: root.lineFont
                     color: Kirigami.Theme.textColor
                     horizontalAlignment: root.textAlignment === 1 ? Qt.AlignHCenter : Qt.AlignLeft
@@ -334,9 +390,7 @@ Item {
                     animateGap: root.animateGap
                     onActivated: {
                         lv.forceActiveFocus()
-                        if (!root.canSeek) return
-                        root.resume()
-                        root.seekRequested(modelData.start)
+                        root.activateLine(index)
                     }
                 }
 
@@ -358,6 +412,16 @@ Item {
                     case Qt.Key_PageDown: dy = page; break
                     case Qt.Key_Home: to = lv.originY; break
                     case Qt.Key_End: to = lv.originY + lv.contentHeight - lv.height; break
+                    case Qt.Key_Return:
+                    case Qt.Key_Enter:
+                    case Qt.Key_Space: {
+                        // seek to the line being sung (the highlighted one)
+                        const t = root._followTarget()
+                        if (!root.canSeek || !t) return
+                        event.accepted = true
+                        root.activateLine(t.index)
+                        return
+                    }
                     default: return
                     }
                     event.accepted = true
@@ -412,8 +476,7 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.Wrap
                     textFormat: Text.PlainText
-                    font.family: root.baseFont.family
-                    font.pointSize: root.mode === "instrumental" ? root.baseFont.pointSize * 1.4 : root.baseFont.pointSize
+                    font: root.messageFont
                     opacity: root.mode === "loading" ? 0.7 : 1.0
                     color: Kirigami.Theme.textColor
                     text: {
@@ -435,6 +498,7 @@ Item {
                     visible: root.mode === "notfound" || root.mode === "error"
                     text: i18n("Retry")
                     icon.name: "view-refresh"
+                    Accessible.description: root.mode === "error" ? root.errorTipText : ""
                     onClicked: root.retryRequested()
                 }
                 PlasmaComponents3.Button {
@@ -450,6 +514,8 @@ Item {
                 PlasmaComponents3.ToolTip {
                     objectName: "errorTip"
                     text: root.errorTipText
+                    // the text can contain provider words: never rich text (an <img> would be fetched)
+                    textFormat: Text.PlainText
                     visible: root.mode === "error" && messageHover.hovered && text !== ""
                 }
             }
