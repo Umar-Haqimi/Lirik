@@ -250,15 +250,6 @@ case "${1:-check}" in
     e2e) exec node tools/e2e.mjs "${@:2}" ;;
     snap) exec bash tests/snapshots/render.sh ;;
     perf) exec bash tools/perf.sh ;;
-    package)
-        ver="$(node -e "console.log(require('./src/metadata.json').KPlugin.Version)")"
-        out="lirik-$ver.plasmoid"
-        rm -f "$out"
-        bin/i18n compile >/dev/null
-        (cd src && zip -qr "../$out" . -x '*.swp' -x '*~')
-        rm -rf src/contents/locale
-        unzip -l "$out" | awk 'NR>3 {print $4}' | grep -vE '^(metadata\.json|contents/.*|translate/.*)?$' && die "unexpected file in package"
-        ok "built $out"
-        ;;
+    package) exec bash tools/package.sh ;;
     *) sed -n '2,12p' "$0"; exit 1 ;;
 esac
