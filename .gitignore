@@ -8,3 +8,6 @@ src/contents/locale
 node_modules/
 tests/snapshots/out/
 *.plasmoid
+
+# agent worktrees (Claude Code)
+.claude/worktrees/
