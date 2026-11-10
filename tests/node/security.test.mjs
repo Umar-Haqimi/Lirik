@@ -164,7 +164,7 @@ test("Qt.openUrlExternally is only reachable through the host-checked opener", (
     // both are the default value of an `opener` property (a test hook), nothing else opens URLs
     assert.deepEqual(sites, [
         "src/contents/ui/lyrics/LyricsFooter.qml:31",
-        "src/contents/ui/lyrics/LyricsPanel.qml:75",
+        "src/contents/ui/lyrics/LyricsPanel.qml:80",
     ])
     const footer = read(path.join(SRC, "contents/ui/lyrics/LyricsFooter.qml"))
     // `.opener(` is invoked exactly once, inside openLink, right after the isSafeUrl guard
@@ -330,11 +330,11 @@ const bindingOf = (own, name) => {
 }
 
 test("every Text/Label/TextEdit in ui/lyrics sets textFormat: Text.PlainText (per element, not per file)", () => {
-    // Documented exceptions (none for Text/Label). ToolTips cannot set textFormat; they are allowed only with an
+    // Documented exceptions (none for Text/Label). ToolTips may set textFormat (PC3 exposes it) and are then allowed; otherwise only with an
     // i18n literal or another control's already-translated text; the one that shows provider text is a KNOWN GAP
     // listed in KNOWN_GAPS (see the report of M8: LyricsPanel.qml errorTip).
     const TOOLTIP_OK = /^(i18n[a-z]*\(\s*"[^"]*"\s*\)|[A-Za-z_]\w*\.text)\s*;?$/
-    const KNOWN_GAPS = new Set(["LyricsPanel.qml:errorTip"])
+    const KNOWN_GAPS = new Set([])
     const gaps = []
     let checked = 0
     for (const p of walk(path.join(SRC, "contents/ui/lyrics"), []).filter((f) => f.endsWith(".qml"))) {
@@ -343,6 +343,7 @@ test("every Text/Label/TextEdit in ui/lyrics sets textFormat: Text.PlainText (pe
             checked++
             const where = `${path.basename(p)}:${el.line} ${el.type}`
             if (el.type === "ToolTip") {
+                if (/textFormat\s*:\s*Text\.PlainText\b/.test(el.ownMasked)) continue // PC3 ToolTip exposes textFormat
                 const text = bindingOf(el.own, "text")
                 if (text !== null && TOOLTIP_OK.test(text)) continue
                 const id = /objectName\s*:\s*"(\w+)"/.exec(el.own)
