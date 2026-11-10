@@ -1,0 +1,3 @@
+module org.kde.coreaddons
+singleton Format 1.0 Format.qml
+singleton FormatTypes 1.0 FormatTypes.qml

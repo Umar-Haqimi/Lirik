@@ -60,6 +60,34 @@ export function htmlLyrics() {
     })
 }
 
+/** Twelve synthetic lines for the side panel snapshots; line i spans 2000+4000i .. +3500 ms (word-timed when `timed`). */
+export function panelLyrics(timed) {
+    const texts = [
+        "Stava until the mora",
+        "la lo mira sol vena tarum",
+        "nemo vora kesh and the long quiet harbour keeps counting every little wave",
+        "pla ce holder",
+        "ultima linea of the verse",
+        "sol vena tarum nemo",
+        "ora kesh mira lo",
+        "the lamps go out one by one",
+        "vena sol vena sol",
+        "nemo vora kesh",
+        "alpha bravo charlie",
+        "fine linea",
+    ]
+    const lines = []
+    for (let i = 0; i < texts.length; i++) {
+        const start = 2000 + i * 4000
+        const ws = texts[i].split(" ")
+        const per = Math.floor(3500 / ws.length)
+        const parts = []
+        for (let k = 0; k < ws.length; k++) parts.push([ws[k] + (k < ws.length - 1 ? " " : ""), start + k * per, k === ws.length - 1 ? start + 3500 : start + (k + 1) * per])
+        lines.push({ start: start, end: start + 3500, text: texts[i], words: timed ? words(parts) : [] })
+    }
+    return normalize({ lines: lines, plain: "" })
+}
+
 /** Two short back-to-back lines for real-time timer tests: 150..350 ms and 350..600 ms. */
 export function fastLyrics() {
     return normalize({

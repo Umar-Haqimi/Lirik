@@ -59,8 +59,9 @@ PlasmoidItem {
     // The compact representation is a lyric surface when panel lyrics are on and the panel is horizontal.
     readonly property bool lyricsSurfaceCompact: plasmoid.configuration.lyricsEnabled && plasmoid.configuration.lyricsInPanel
         && formFactor === PlasmaCore.Types.Horizontal
-    // The full view (M6) ORs its expanded state in here.
-    property bool lyricsSurfaceFull: false
+    // The full view: side panel shown AND (popup expanded OR desktop form factor).
+    readonly property bool lyricsSurfaceFull: plasmoid.configuration.lyricsEnabled && plasmoid.configuration.lyricsSidePanelPosition !== 0
+        && (widget.expanded || formFactor === PlasmaCore.Types.Planar)
     readonly property bool lyricSurfaceVisible: lyricsSurfaceCompact || lyricsSurfaceFull
 
     LyricsController {
@@ -110,5 +111,5 @@ PlasmoidItem {
     }
 
     compactRepresentation: Compact {}
-    fullRepresentation: Full {}
+    fullRepresentation: FullWithLyrics {}
 }

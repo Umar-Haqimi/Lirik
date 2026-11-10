@@ -55,5 +55,30 @@ if same panel-wipe-t1 panel-wipe-t2; then echo "FAIL the wipe did not move betwe
 if same panel-long-t1 panel-long-t2; then echo "FAIL the long line did not pan" >&2; fail=1; else echo "ok   long line pans"; fi
 if same panel-title panel-wipe-t1; then echo "FAIL lyric frame equals the title frame" >&2; fail=1; else echo "ok   title and lyric frames differ"; fi
 
+
+# --- side panel (every state, light and dark, FullWithLyrics layouts) ---
+plog="$OUT/render-panel.log"
+timeout 180 "$QT6BIN/qml" "${IMPORTS[@]}" tests/snapshots/panel-harness.qml > "$plog" 2>&1 || { cat "$plog"; echo "panel snapshot harness failed" >&2; exit 1; }
+if grep -E 'qml: SNAP .*FAILED' "$plog"; then echo "a panel snapshot could not be saved" >&2; exit 1; fi
+if grep -E '(Warning|Error|TypeError|ReferenceError|Unable to assign|is not a type)' "$plog" | grep -vE 'locale|UTF-8'; then
+    echo "QML warnings or errors while rendering the side panel (see $plog)" >&2
+    exit 1
+fi
+grep -q 'SNAP-DONE' "$plog" || { cat "$plog"; echo "panel harness did not finish" >&2; exit 1; }
+states=(loading synced-word synced-line synced-overlap synced-gap synced-center synced-suspended plain instrumental notfound error ratelimited skipped nomedia)
+for theme in light dark; do
+    for n in "${states[@]}"; do
+        f="$OUT/side-$n-$theme.png"
+        [ -s "$f" ] || { echo "missing snapshot side-$n-$theme.png" >&2; exit 1; }
+    done
+done
+for n in full-left full-right full-hidden full-right-dark full-desktop; do
+    [ -s "$OUT/$n.png" ] || { echo "missing snapshot $n.png" >&2; exit 1; }
+done
+if same side-synced-word-light side-synced-word-dark; then echo "FAIL light and dark panel renders are identical" >&2; fail=1; else echo "ok   light and dark panel renders differ"; fi
+if same side-synced-word-light side-synced-line-light; then echo "FAIL word and line renders are identical" >&2; fail=1; else echo "ok   word-synced and line-synced panel renders differ"; fi
+if same full-left full-right; then echo "FAIL Left and Right layouts are identical" >&2; fail=1; else echo "ok   Left and Right layouts differ"; fi
+if same full-right full-hidden; then echo "FAIL Right and Hidden layouts are identical" >&2; fail=1; else echo "ok   Right and Hidden layouts differ"; fi
+
 echo "snapshots written to tests/snapshots/out/ (open the PNGs and look at them)"
 exit "$fail"
