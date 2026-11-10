@@ -1,3 +1,10 @@
 .vscode
 dist
 src/contents/locale
+
+# Lirik
+.refs/
+.local/
+node_modules/
+tests/snapshots/out/
+*.plasmoid

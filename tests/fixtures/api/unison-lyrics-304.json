@@ -1,0 +1,10 @@
+{
+  "source": "scrubbed live sample (tools/probe-apis.mjs + tools/scrub.mjs)",
+  "request": "https://unison.betterlyrics.org/lyrics?…",
+  "status": 304,
+  "headers": {
+    "etag": "W/\"13529-Sml3_yqMrprenjk14U_Vw1AuXsM\"",
+    "cache-control": "no-store"
+  },
+  "body": ""
+}

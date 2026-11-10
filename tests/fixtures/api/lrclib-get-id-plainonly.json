@@ -1,0 +1,9 @@
+{
+  "source": "scrubbed live sample (tools/probe-apis.mjs + tools/scrub.mjs)",
+  "request": "https://lrclib.net/api/get/:id",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": "{\"id\":27051096,\"name\":\"Placeholder Title\",\"trackName\":\"Placeholder Title\",\"artistName\":\"Placeholder Artist\",\"albumName\":\"Placeholder Album\",\"duration\":370.009984,\"instrumental\":false,\"hasWordSync\":false,\"plainLyrics\":\"w1\\nw2 w3 w4 w5 w6 w7 w8\\nw9\\nw10 w11\\nw12 w13 w14 w11 w15 w16\\nw16\\nw17\\nw18 w19\\nw20 w8\\n\\nw4 w5 w21\\nw22 w23 w24\\nw21 w25 w26 w27 w28\\nw12 w13 w14 w11 w27 w28\\nw21 w25 w26 w27 w28\\nw22 w23 w24\\nw12 w13 w14 w11 w27 w28\\nw4 w5 w21\\nw21 w25 w26 w27 w28\\n\\nw22 w23 w24\",\"syncedLyrics\":null,\"lyricsfile\":\"version: '1.0'\\nmetadata:\\n  title: w29 (w30 w31 w32)\\n  artist: w30 w31\\n  album: w30 w31 w30 w33\\n  duration_ms: 370010\\n  instrumental: false\\nlines: []\\nplain: |-\\n  w1\\n  w2 w3 w4 w5 w6 w7 w8\\n  w9\\n  w10 w11\\n  w12 w13 w14 w11 w15 w16\\n  w16\\n  w17\\n  w18 w19\\n  w20 w8\\n\\n  w4 w5 w21\\n  w22 w23 w24\\n  w21 w25 w26 w27 w28\\n  w12 w13 w14 w11 w27 w28\\n  w21 w25 w26 w27 w28\\n  w22 w23 w24\\n  w12 w13 w14 w11 w27 w28\\n  w4 w5 w21\\n  w21 w25 w26 w27 w28\\n\\n  w22 w23 w24\\n\"}"
+}

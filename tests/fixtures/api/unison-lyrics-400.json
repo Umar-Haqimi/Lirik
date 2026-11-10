@@ -1,0 +1,9 @@
+{
+  "source": "scrubbed live sample (tools/probe-apis.mjs + tools/scrub.mjs)",
+  "request": "https://unison.betterlyrics.org/lyrics",
+  "status": 400,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": "{\"success\":false,\"error\":\"Provide either 'v' (videoId) or 'song' + 'artist'\",\"code\":\"MISSING_QUERY\",\"hint\":\"To search, add either a video link or both the song and artist names.\"}"
+}

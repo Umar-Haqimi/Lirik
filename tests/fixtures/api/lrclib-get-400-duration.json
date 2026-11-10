@@ -1,0 +1,9 @@
+{
+  "source": "scrubbed live sample (tools/probe-apis.mjs + tools/scrub.mjs)",
+  "request": "https://lrclib.net/api/get?…",
+  "status": 400,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": "{\"message\":\"duration: must be between 1 and 3600\",\"name\":\"ValidationError\",\"statusCode\":400}"
+}

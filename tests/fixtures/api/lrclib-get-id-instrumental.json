@@ -1,0 +1,9 @@
+{
+  "source": "scrubbed live sample (tools/probe-apis.mjs + tools/scrub.mjs)",
+  "request": "https://lrclib.net/api/get/:id",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": "{\"id\":24732309,\"name\":\"Placeholder Title\",\"trackName\":\"Placeholder Title\",\"artistName\":\"Placeholder Artist\",\"albumName\":\"Placeholder Album\",\"duration\":274.872,\"instrumental\":true,\"hasWordSync\":false,\"plainLyrics\":null,\"syncedLyrics\":null,\"lyricsfile\":\"version: '1.0'\\nmetadata:\\n  title: w1 w2 - w3 (w4)\\n  artist: w1 w2\\n  album: w1 w2\\n  duration_ms: 274872\\n  instrumental: true\\nlines: []\\n\"}"
+}

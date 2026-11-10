@@ -1,0 +1,9 @@
+{
+  "source": "scrubbed live sample (tools/probe-apis.mjs + tools/scrub.mjs)",
+  "request": "https://lrclib.net/api/get?…",
+  "status": 400,
+  "headers": {
+    "content-type": "text/plain; charset=utf-8"
+  },
+  "body": "Failed to deserialize query string: missing field `artist_name`"
+}

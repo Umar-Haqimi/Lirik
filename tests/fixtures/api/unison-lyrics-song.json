@@ -1,0 +1,9 @@
+{
+  "source": "scrubbed live sample (tools/probe-apis.mjs + tools/scrub.mjs)",
+  "request": "https://unison.betterlyrics.org/lyrics?…",
+  "status": 404,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": "{\"success\":false,\"error\":\"Lyrics not found\",\"code\":\"NOT_FOUND\",\"hint\":\"Couldn't find lyrics for this. Try a different search, or be the first to submit them.\"}"
+}

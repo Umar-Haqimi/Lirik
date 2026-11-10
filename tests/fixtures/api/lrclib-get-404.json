@@ -1,0 +1,9 @@
+{
+  "source": "scrubbed live sample (tools/probe-apis.mjs + tools/scrub.mjs)",
+  "request": "https://lrclib.net/api/get?…",
+  "status": 404,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": "{\"message\":\"Failed to find specified track\",\"name\":\"TrackNotFound\",\"statusCode\":404}"
+}
