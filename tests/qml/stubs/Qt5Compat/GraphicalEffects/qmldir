@@ -1,3 +1,0 @@
-module Qt5Compat.GraphicalEffects
-OpacityMask 1.0 OpacityMask.qml
-LinearGradient 1.0 LinearGradient.qml

@@ -20,7 +20,7 @@ mkdir -p "$OUT"
 # Plasma / Qt5Compat stubs only when the real modules are missing (same rule as tools/dev.sh).
 IMPORTS=()
 probe="$(mktemp --suffix=.qml)"
-printf 'import org.kde.kirigami\nimport org.kde.plasma.components\nimport Qt5Compat.GraphicalEffects\nimport QtQml\nQtObject { Component.onCompleted: Qt.quit() }\n' > "$probe"
+printf 'import org.kde.kirigami\nimport org.kde.plasma.components\nimport QtQml\nQtObject { Component.onCompleted: Qt.quit() }\n' > "$probe"
 probe_out="$(timeout 60 "$QT6BIN/qml" "$probe" 2>&1 || true)"
 if echo "$probe_out" | grep -q 'is not installed'; then
     echo "notice: using test stubs for Plasma modules (tests/qml/stubs)"

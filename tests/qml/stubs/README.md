@@ -24,7 +24,6 @@ actually exist in Plasma. Anything that depends on those needs the real `plasmoi
 
 ## Qt5Compat.GraphicalEffects
 
-Upstream's `ScrollingText` and `Compact.qml` import `Qt5Compat.GraphicalEffects`, which the cloud container
-does not have either. `Qt5Compat/GraphicalEffects` here is a pair of inert items (`OpacityMask`, `LinearGradient`)
-so `SongAndArtistText` loads. An item with `layer.effect` set to the stub renders nothing, so the tests and
-snapshots use short titles or `truncateStyle` Elide/None, never an overflowing FadeOut title.
+Not stubbed: it is a real Qt module (`qt5compat`), present on every Plasma desktop. In the cloud container it
+comes from the aqtinstall Qt tree (`aqt install-qt linux desktop 6.12.0 linux_gcc_64 -O /opt/qt -m qt5compat`),
+so upstream's `OpacityMask`/`LinearGradient` really render in tests and snapshots.

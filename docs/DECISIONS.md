@@ -225,6 +225,9 @@ Development continued in an Ubuntu 24.04 cloud container with Node 22 and an `aq
 `/opt/qt/6.12.0/gcc_64` (same Qt version as the desktop). `tools/dev.sh` honours a `QT6BIN` override
 (`export QT6BIN=/opt/qt/6.12.0/gcc_64/bin`), defaulting to `/usr/lib/qt6/bin`. There is no Plasma 6 there, so
 the `smoke` stage (plasmoidviewer) is skipped in that container; lint, node, V4 and qmltestrunner run.
+The Qt tree also has the real `qt5compat` and `qtshadertools` modules (`aqt install-qt linux desktop 6.12.0
+linux_gcc_64 -O /opt/qt -m qt5compat qtshadertools`), so upstream's `OpacityMask`/`LinearGradient` render for real
+in tests and snapshots; only Kirigami / Plasma components / plasmoid / private mpris are stubbed (D17).
 `node --test` is invoked with an explicit glob (`tests/node/*.test.mjs`) and `--test-reporter=tap` so Node 22 and
 Node 26 (whose default directory handling and summary format differ) behave the same.
 
