@@ -27,3 +27,9 @@ actually exist in Plasma. Anything that depends on those needs the real `plasmoi
 Not stubbed: it is a real Qt module (`qt5compat`), present on every Plasma desktop. In the cloud container it
 comes from the aqtinstall Qt tree (`aqt install-qt linux desktop 6.12.0 linux_gcc_64 -O /opt/qt -m qt5compat`),
 so upstream's `OpacityMask`/`LinearGradient` really render in tests and snapshots.
+
+## Units.animationsOff (test-only switch)
+
+`org.kde.kirigami.Units` in the stubs has a writable `animationsOff`; when true every `*Duration` is 0, like
+"animations off" in Plasma. `tests/qml/tst_animationsoff.qml` uses it and skips itself when the real Kirigami is
+on the import path (the real `Units` has no such property).

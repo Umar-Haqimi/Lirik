@@ -96,6 +96,12 @@ do_policy() {
             grep -q 'Text.PlainText' "$qf" || die "$qf renders text without textFormat: Text.PlainText"
         fi
     done
+    # upstream parity: main.xml may only ADD keys relative to the fork point (SPEC §5 minimal-diff rule)
+    if git cat-file -e 9b63a0d 2>/dev/null; then
+        if git diff 9b63a0d -- src/contents/config/main.xml | grep -E '^-[^-]'; then
+            die "main.xml: lines were removed or changed relative to 9b63a0d (only additions are allowed)"
+        fi
+    fi
     # the fixtures bundle is current
     if [ -f tools/gen-fixtures.mjs ]; then
         node tools/gen-fixtures.mjs --check || die "tests/fixtures/fixtures.gen.mjs is stale: run node tools/gen-fixtures.mjs"

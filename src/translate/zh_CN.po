@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: plasmusic-toolbar\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-02 07:43+0000\n"
+"POT-Creation-Date: 2026-11-10 23:10+0000\n"
 "PO-Revision-Date: 2026-08-02 07:43+0000\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -32,6 +32,11 @@ msgstr "面板视图"
 msgid "Full View"
 msgstr "完整视图"
 
+#: src/contents/config/config.qml:21
+#, kde-format
+msgid "Lyrics"
+msgstr ""
+
 #: src/contents/ui/Full.qml:162
 #, kde-format
 msgctxt "@action:button"
@@ -47,6 +52,26 @@ msgstr "将播放器置顶"
 #, kde-format
 msgid "This player can't be raised"
 msgstr "无法置顶此播放器"
+
+#: src/contents/ui/Full.qml:286
+#, kde-format
+msgid "Click to copy the track info"
+msgstr ""
+
+#: src/contents/ui/Full.qml:384
+#, kde-format
+msgid "Hide lyrics"
+msgstr ""
+
+#: src/contents/ui/Full.qml:384
+#, kde-format
+msgid "Show lyrics"
+msgstr ""
+
+#: src/contents/ui/components/TextCopyArea.qml:14
+#, kde-format
+msgid "Copied!"
+msgstr ""
 
 #: src/contents/ui/config/Compact.qml:50 src/contents/ui/config/Full.qml:46
 #, kde-format
@@ -66,9 +91,8 @@ msgid ""
 "playback controls are aligned to the right (or bottom); The song text can be "
 "positioned based on user preference."
 msgstr ""
-"该小部件会填满水平面板的全部可用宽度（或垂直面板的全部可用高度）；图标"
-"靠左（或靠上）对齐，播放控制靠右（或靠下）对齐；歌曲文本可根据用户偏好调"
-"整位置。"
+"该小部件会填满水平面板的全部可用宽度（或垂直面板的全部可用高度）；图标靠左"
+"（或靠上）对齐，播放控制靠右（或靠下）对齐；歌曲文本可根据用户偏好调整位置。"
 
 #: src/contents/ui/config/Compact.qml:71 src/contents/ui/config/Full.qml:65
 #, kde-format
@@ -81,6 +105,7 @@ msgid "Left (Top for vertical panel)"
 msgstr "左（垂直面板中为顶部）"
 
 #: src/contents/ui/config/Compact.qml:83 src/contents/ui/config/Full.qml:78
+#: src/contents/ui/config/Lyrics.qml:246
 #, kde-format
 msgid "Center"
 msgstr "居中"
@@ -160,6 +185,7 @@ msgstr "歌曲标题位置："
 #: src/contents/ui/config/Compact.qml:230
 #: src/contents/ui/config/Compact.qml:275 src/contents/ui/config/Full.qml:262
 #: src/contents/ui/config/Full.qml:309 src/contents/ui/config/Full.qml:354
+#: src/contents/ui/config/Lyrics.qml:223
 #, kde-format
 msgid "Hidden"
 msgstr "隐藏"
@@ -353,12 +379,13 @@ msgstr "显示专辑封面"
 msgid "Show progress bar"
 msgstr "显示进度条"
 
-#: src/contents/ui/config/Full.qml:66
+#: src/contents/ui/config/Full.qml:66 src/contents/ui/config/Lyrics.qml:223
+#: src/contents/ui/config/Lyrics.qml:246
 #, kde-format
 msgid "Left"
 msgstr "左"
 
-#: src/contents/ui/config/Full.qml:90
+#: src/contents/ui/config/Full.qml:90 src/contents/ui/config/Lyrics.qml:223
 #, kde-format
 msgid "Right"
 msgstr "右"
@@ -408,8 +435,7 @@ msgstr "用播放控制填充可用空间"
 msgid ""
 "When enabled, playback controls are spread across the full width of the "
 "widget. When disabled, they are grouped together in the center."
-msgstr ""
-"启用后，播放控制将分布在小部件的整个宽度上；禁用时则集中在中间。"
+msgstr "启用后，播放控制将分布在小部件的整个宽度上；禁用时则集中在中间。"
 
 #: src/contents/ui/config/Full.qml:170
 #, kde-format
@@ -444,7 +470,7 @@ msgstr "专辑封面"
 msgid "Album placeholder:"
 msgstr "专辑占位图："
 
-#: src/contents/ui/config/Full.qml:205 src/contents/ui/config/General.qml:132
+#: src/contents/ui/config/Full.qml:205 src/contents/ui/config/General.qml:127
 #, kde-format
 msgid "Choose…"
 msgstr "选择…"
@@ -521,8 +547,8 @@ msgid ""
 "If two or more players are playing at the same time, the widget will choose "
 "the one that started playing first."
 msgstr ""
-"将根据当前正在播放的歌曲自动选择播放器。如果两个或多个播放器同时播放，"
-"小部件将选择最先开始播放的那个。"
+"将根据当前正在播放的歌曲自动选择播放器。如果两个或多个播放器同时播放，小部件"
+"将选择最先开始播放的那个。"
 
 #: src/contents/ui/config/General.qml:54
 #, kde-format
@@ -539,7 +565,7 @@ msgstr "未选择"
 msgid "%1 players selected"
 msgstr "已选择 %1 个播放器"
 
-#: src/contents/ui/config/General.qml:113
+#: src/contents/ui/config/General.qml:108
 #, kde-format
 msgid ""
 "Always display information from the selected player, if it's not running the "
@@ -547,54 +573,400 @@ msgid ""
 "players that are currently running, if you can't find the one you want, open "
 "the player application and reload the list with reload button."
 msgstr ""
-"始终显示所选播放器的信息；如果它未运行，小部件将被隐藏。你可以在下拉列表"
-"中选择当前正在运行的所有播放器；如果找不到想要的播放器，请打开播放器应"
-"用，然后点击重新加载按钮刷新列表。"
+"始终显示所选播放器的信息；如果它未运行，小部件将被隐藏。你可以在下拉列表中选"
+"择当前正在运行的所有播放器；如果找不到想要的播放器，请打开播放器应用，然后点"
+"击重新加载按钮刷新列表。"
 
-#: src/contents/ui/config/General.qml:121
+#: src/contents/ui/config/General.qml:116
 #, kde-format
 msgid "Font customization"
 msgstr "字体自定义"
 
-#: src/contents/ui/config/General.qml:125
+#: src/contents/ui/config/General.qml:120
 #, kde-format
 msgid "Custom font:"
 msgstr "自定义字体："
 
-#: src/contents/ui/config/General.qml:143
+#: src/contents/ui/config/General.qml:138
 #, kde-format
 msgid "%1pt %2"
 msgstr "%1pt %2"
 
-#: src/contents/ui/config/General.qml:150
+#: src/contents/ui/config/General.qml:145
 #, kde-format
 msgid "No media found behavior"
 msgstr "未找到媒体时的行为"
 
-#: src/contents/ui/config/General.qml:155
+#: src/contents/ui/config/General.qml:150
 #, kde-format
 msgid "Show widget when no media found"
 msgstr "未找到媒体时显示小部件"
 
-#: src/contents/ui/config/General.qml:160
+#: src/contents/ui/config/General.qml:155
 #, kde-format
 msgid "Text displayed when no media found:"
 msgstr "未找到媒体时显示的文本："
 
-#: src/contents/ui/config/General.qml:166
+#: src/contents/ui/config/General.qml:161
 #, kde-format
 msgid "Controls behaviour"
 msgstr "控制行为"
 
-#: src/contents/ui/config/General.qml:171
+#: src/contents/ui/config/General.qml:166
 #, kde-format
 msgid "Volume step:"
 msgstr "音量步进："
 
-#: src/contents/ui/config/General.qml:181
+#: src/contents/ui/config/General.qml:176
 #, kde-format
 msgid "Choose a Font"
 msgstr "选择字体"
+
+#: src/contents/ui/config/Lyrics.qml:125
+#, kde-format
+msgid "Sources"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:130
+#, kde-format
+msgid "Lyrics:"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:131
+#, kde-format
+msgid "Enable lyrics"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:137
+#, kde-format
+msgid "Providers:"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:138
+#, kde-format
+msgid "LRCLIB"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:145
+#, kde-format
+msgid "Unison"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:152
+#, kde-format
+msgid "Order:"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:153
+#, kde-format
+msgid "Ask Unison first"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:161
+#, kde-format
+msgid "No provider is selected, so no lyrics will be looked up."
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:171
+#, kde-format
+msgid "Global offset (ms):"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:178
+#, kde-format
+msgid "Delayed audio, such as Bluetooth, needs a positive value"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:184
+#, kde-format
+msgid "Panel"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:190
+#, kde-format
+msgid "Lyrics in the panel:"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:191
+#, kde-format
+msgid "Show the current line in the song text"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:197
+#, kde-format
+msgid "Highlight the sung word (karaoke)"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:203
+#, kde-format
+msgid "Show title and artist during long pauses"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:211
+#, kde-format
+msgid "Pause counts as a gap after (s):"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:217
+#, kde-format
+msgid "Full view"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:224
+#, kde-format
+msgid "Lyrics side panel:"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:233
+#, kde-format
+msgid "Side panel width (px):"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:239
+#, kde-format
+msgid "Karaoke:"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:240
+#, kde-format
+msgid "Highlight the sung word"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:247
+#, kde-format
+msgid "Text alignment:"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:251
+#, kde-format
+msgid "Text size:"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:262
+#, kde-format
+msgctxt "Text size as a percentage"
+msgid "%1%"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:269
+#, kde-format
+msgid "Filtering"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:278
+#, kde-format
+msgid "Skip tracks shorter than (s):"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:287
+#, kde-format
+msgid "Skip tracks longer than (s):"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:294
+#, kde-format
+msgid "Player names, separated by commas"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:295
+#, kde-format
+msgid "Never look up lyrics for:"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:301
+#, kde-format
+msgid "Cache & privacy"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:307
+#, kde-format
+msgid "Cache:"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:308
+#, kde-format
+msgid "Remember found lyrics on this computer"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:312
+#, kde-format
+msgid "Stored lyrics:"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:314
+#, kde-format
+msgid "%1 entry"
+msgid_plural "%1 entries"
+msgstr[0] ""
+
+#: src/contents/ui/config/Lyrics.qml:317
+#, kde-format
+msgid "Clear cache"
+msgstr ""
+
+#: src/contents/ui/config/Lyrics.qml:327
+#, kde-format
+msgid ""
+"Track title, artist, album and duration are sent to the enabled providers."
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:42
+#, kde-format
+msgctxt "@label sync quality badge"
+msgid "Word"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:43
+#, kde-format
+msgctxt "@label sync quality badge"
+msgid "Line"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:44
+#, kde-format
+msgctxt "@label sync quality badge"
+msgid "Unsynced"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:49
+#, kde-format
+msgctxt "@label offset in seconds"
+msgid "%1 s"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:128
+#, kde-format
+msgctxt "@info credit prefix, followed by the provider name"
+msgid "Lyrics from"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:142
+#, kde-format
+msgctxt ""
+"@info separates the provider from the submitter's name, e.g. \"Lyrics from "
+"Unison, submitted by Alice\""
+msgid "submitted by"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:209
+#, kde-format
+msgctxt "@action:button"
+msgid "Show lyrics earlier"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:213
+#, kde-format
+msgid "Lyrics earlier by 0.1 s (Shift: 0.5 s)"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:234
+#, kde-format
+msgid "Click to reset the offset"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:243
+#, kde-format
+msgctxt "@action:button"
+msgid "Show lyrics later"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:247
+#, kde-format
+msgid "Lyrics later by 0.1 s (Shift: 0.5 s)"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:260
+#, kde-format
+msgctxt "@action:button"
+msgid "Lyrics options"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:275
+#, kde-format
+msgid "Try next match"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:281
+#, kde-format
+msgid "Refetch"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:286
+#, kde-format
+msgid "Hide lyrics for this track"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:95
+#, kde-format
+msgid "The provider took too long to answer"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:96
+#, kde-format
+msgid "The provider answered with an error"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:97
+#, kde-format
+msgid "Couldn't connect to the provider"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:98
+#, kde-format
+msgid "The lookup failed"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:100
+#, kde-format
+msgid "%1 (%2)"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:272
+#: src/contents/ui/lyrics/LyricsPanel.qml:425
+#, kde-format
+msgid "Lyrics providers are busy. Retrying in %1 s"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:421
+#, kde-format
+msgid "Looking for lyrics…"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:422
+#, kde-format
+msgid "♪ Instrumental"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:423
+#, kde-format
+msgid "No lyrics found for this track"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:424
+#, kde-format
+msgid "Couldn't reach the lyrics providers"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:426
+#, kde-format
+msgid "Lyrics are off for this track"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:436
+#, kde-format
+msgid "Retry"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:445
+#, kde-format
+msgid "Look up anyway"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:465
+#, kde-format
+msgctxt "@action:button jump back to the line being sung"
+msgid "Resume"
+msgstr ""
 
 #: src/contents/ui/main.qml:25
 #, kde-format
@@ -632,3 +1004,18 @@ msgstr "滚动调节音量"
 #, kde-format
 msgid "Ctrl+Click to bring player to the front"
 msgstr "Ctrl+单击将播放器置顶"
+
+#: src/contents/ui/main.qml:45
+#, kde-format
+msgid "Lyrics: %1 (line-synced)"
+msgstr ""
+
+#: src/contents/ui/main.qml:45
+#, kde-format
+msgid "Lyrics: %1 (word-synced)"
+msgstr ""
+
+#: src/contents/ui/main.qml:47
+#, kde-format
+msgid "Lyrics: %1 (unsynced)"
+msgstr ""

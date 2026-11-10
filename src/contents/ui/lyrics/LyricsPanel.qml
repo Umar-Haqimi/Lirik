@@ -37,6 +37,7 @@ Item {
     property bool showLoading: false
     /// Seconds until the rate-limit retry (a number) or null.
     property var retryInS: null
+    /// An i18n-free error CODE from the controller ("network" | "timeout" | "http"); never shown raw (see errorTipText).
     property string errorText: ""
     /// Provider and HTTP status; plain text, shown as the tooltip of the error state.
     property string errorDetail: ""
@@ -86,6 +87,19 @@ Item {
     /// Auto-scroll follows the timeline (false after a manual scroll until resumed).
     readonly property bool following: root._following
     readonly property bool hasLines: !!root.lyrics && !!root.lyrics.lines && root.lyrics.lines.length > 0
+    /// Tooltip of the error state: translated copy for the error code, plus provider and HTTP status.
+    readonly property string errorTipText: {
+        if (root.errorText === "" && root.errorDetail === "") return ""
+        let copy
+        switch (root.errorText) {
+        case "timeout": copy = i18n("The provider took too long to answer"); break
+        case "http": copy = i18n("The provider answered with an error"); break
+        case "network": copy = i18n("Couldn't connect to the provider"); break
+        default: copy = i18n("The lookup failed")
+        }
+        return root.errorDetail !== "" ? i18n("%1 (%2)", copy, root.errorDetail) : copy
+    }
+
     /// "empty" | "lines" | "plain" | "loading" | "instrumental" | "notfound" | "error" | "ratelimited" | "skipped"
     readonly property string mode: {
         if (!root.hasMedia) return "empty"
@@ -435,7 +449,7 @@ Item {
                 HoverHandler { id: messageHover }
                 PlasmaComponents3.ToolTip {
                     objectName: "errorTip"
-                    text: root.errorDetail !== "" ? root.errorDetail : root.errorText
+                    text: root.errorTipText
                     visible: root.mode === "error" && messageHover.hovered && text !== ""
                 }
             }

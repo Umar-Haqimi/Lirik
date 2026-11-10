@@ -31,7 +31,20 @@ PlasmoidItem {
             text += "\n" + i18n("Scroll to adjust volume")
             text += "\n" + (player.canRaise ? i18n("Ctrl+Click to bring player to the front") : i18n("This player can't be raised"))
         }
+        if (lyricsTooltipLine !== "") text += "\n" + lyricsTooltipLine
         return text
+    }
+
+    // Lirik: one extra tooltip line while the panel shows lyrics, e.g. "Lyrics: LRCLIB (word-synced)".
+    // Depends on the lookup status, not on the line-by-line frame, so the tooltip does not churn while singing.
+    readonly property string lyricsTooltipLine: {
+        if (!lyricsSurfaceCompact || !lyricsController.source) return ""
+        const provider = lyricsController.source.provider === "unison" ? "Unison" : lyricsController.source.provider === "lrclib" ? "LRCLIB" : ""
+        if (provider === "") return ""
+        if (lyricsController.status === "synced") {
+            return lyricsController.syncKind === "word" ? i18n("Lyrics: %1 (word-synced)", provider) : i18n("Lyrics: %1 (line-synced)", provider)
+        }
+        return lyricsController.status === "plain" ? i18n("Lyrics: %1 (unsynced)", provider) : ""
     }
 
     onShowWhenNoMediaChanged: {
@@ -55,60 +68,36 @@ PlasmoidItem {
 
     }
 
-    // --- Lirik: lyrics engine, playback clock and frame scheduler ---
-    // The compact representation is a lyric surface when panel lyrics are on and the panel is horizontal.
+    // --- Lirik: lyrics engine, playback clock and frame scheduler (ui/lyrics/LyricsEngine.qml) ---
+    // The compact representation is a lyric surface when panel lyrics are on, the song text slot is shown and
+    // the panel is horizontal.
     readonly property bool lyricsSurfaceCompact: plasmoid.configuration.lyricsEnabled && plasmoid.configuration.lyricsInPanel
-        && formFactor === PlasmaCore.Types.Horizontal
+        && plasmoid.configuration.songTextInPanel && formFactor === PlasmaCore.Types.Horizontal
     // The full view: side panel shown AND (popup expanded OR desktop form factor).
     readonly property bool lyricsSurfaceFull: plasmoid.configuration.lyricsEnabled && plasmoid.configuration.lyricsSidePanelPosition !== 0
         && (widget.expanded || formFactor === PlasmaCore.Types.Planar)
     readonly property bool lyricSurfaceVisible: lyricsSurfaceCompact || lyricsSurfaceFull
 
-    LyricsController {
-        id: lyricsController
+    LyricsEngine {
+        id: lyricsEngine
 
-        hasMedia: player.ready
-        trackTitle: player.title
-        trackArtist: player.artists
-        trackAlbum: player.album
-        trackLengthUs: player.songLength
-        trackArtUrl: player.artUrl
-        playerIdentity: player.identity
-        enabled: plasmoid.configuration.lyricsEnabled
+        player: player
+        lyricsEnabled: plasmoid.configuration.lyricsEnabled
+        surfaceVisible: widget.lyricSurfaceVisible
         providers: plasmoid.configuration.lyricsProviders
         minTrackS: plasmoid.configuration.lyricsMinTrackSec
         maxTrackS: plasmoid.configuration.lyricsMaxTrackSec
         excludedPlayers: plasmoid.configuration.lyricsExcludedPlayers
         cacheEnabled: plasmoid.configuration.lyricsCacheEnabled
         devBaseUrl: plasmoid.configuration.lyricsDevBaseUrl
-    }
-
-    PlaybackClock {
-        id: playbackClock
-
-        readonly property bool isPlaying: player.playbackStatus === Mpris.PlaybackStatus.Playing
-
-        positionUs: player.songPosition
-        rate: player.rate
-        playing: isPlaying
-        lengthUs: player.songLength
-        trackKey: lyricsController.trackKey
         globalOffsetMs: plasmoid.configuration.lyricsGlobalOffsetMs
-        trackOffsetMs: lyricsController.offsetMs
-        pollEnabled: isPlaying && lyricsController.syncKind !== "none" && widget.lyricSurfaceVisible
-
-        onPollRequested: player.updatePosition()
+        gapThresholdSec: plasmoid.configuration.lyricsGapThresholdSec
     }
 
-    LyricsTimeline {
-        id: lyricsTimeline
-
-        lyrics: lyricsController.lyrics
-        clock: playbackClock
-        playing: playbackClock.isPlaying
-        active: widget.lyricSurfaceVisible && lyricsController.syncKind !== "none"
-        gapThresholdMs: Math.max(3, Math.min(30, plasmoid.configuration.lyricsGapThresholdSec)) * 1000
-    }
+    // The representations (Compact.qml, FullWithLyrics.qml) reach the engine parts through these names.
+    readonly property var lyricsController: lyricsEngine.controller
+    readonly property var playbackClock: lyricsEngine.clock
+    readonly property var lyricsTimeline: lyricsEngine.timeline
 
     compactRepresentation: Compact {}
     fullRepresentation: FullWithLyrics {}

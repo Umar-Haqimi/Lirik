@@ -1,4 +1,5 @@
 import QtQuick
+import org.kde.kirigami as Kirigami
 import "../../code/constants.mjs" as C
 
 // One lyric line with a karaoke wipe (SPEC §4.1, traps 12 and 14).
@@ -17,7 +18,8 @@ import "../../code/constants.mjs" as C
 // Long lines (wider than `availableWidth`): with word timings the strip is translated so the wipe sits in the
 // middle (it can only start moving once the wipe passes half the slot, and stops at the line's end), which
 // keeps it inside the middle 60 % of the slot; without word timings (or with karaoke off) the strip pans
-// linearly over the line's duration. Both are declarative animations too.
+// linearly over the line's duration. Both are declarative animations too (and jump instead of sweeping when
+// Kirigami.Units.longDuration is 0, i.e. the user turned animations off).
 Item {
     id: root
 
@@ -125,6 +127,8 @@ Item {
         root.wipeX = wx0
         root.panX = p0
         if (!root.playing || dur < 1 || (wx1 === wx0 && p1 === p0)) return
+        // Animations switched off in the desktop settings: no sweep, the wipe and the pan jump at each word change.
+        if (Kirigami.Units.longDuration === 0) return
         root._wipeAnim.from = wx0
         root._wipeAnim.to = wx1
         root._wipeAnim.duration = dur

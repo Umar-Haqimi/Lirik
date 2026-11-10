@@ -275,9 +275,17 @@ TestCase {
         compare(child("messageText").text, "Lyrics providers are busy. Retrying in 12 s")
         panel.retryInS = 11
         compare(child("messageText").text, "Lyrics providers are busy. Retrying in 11 s")
+        panel.errorText = "http"
         panel.errorDetail = "lrclib (HTTP 503)"
         panel.status = "error"
-        compare(child("errorTip").text, "lrclib (HTTP 503)")
+        compare(child("errorTip").text, "The provider answered with an error (lrclib (HTTP 503))")
+        verify(child("errorTip").text.indexOf("http") !== 0, "never the raw code")
+        panel.errorText = "timeout"
+        compare(child("errorTip").text, "The provider took too long to answer (lrclib (HTTP 503))")
+        panel.errorText = "network"
+        panel.errorDetail = ""
+        compare(child("errorTip").text, "Couldn't connect to the provider")
+        panel.errorText = ""
         panel.hasMedia = false
         wait(30)
         compare(child("messageText").text, "")
