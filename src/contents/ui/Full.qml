@@ -379,4 +379,37 @@ Item {
         }
 
     }
+
+    // --- Lirik: toggle for the lyrics side panel (Hidden <-> the last used side) ---
+    readonly property string lyricsToggleText: plasmoid.configuration.lyricsSidePanelPosition === 0 ? i18n("Show lyrics") : i18n("Hide lyrics")
+
+    PlasmaComponents3.ToolButton {
+        id: lyricsToggle
+        visible: plasmoid.configuration.lyricsEnabled
+        z: 10
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: Kirigami.Units.smallSpacing
+        checked: plasmoid.configuration.lyricsSidePanelPosition !== 0
+        contentItem: Kirigami.Icon {
+            source: "view-media-lyrics"
+            fallback: "view-media-track"
+            implicitWidth: Kirigami.Units.iconSizes.smallMedium
+            implicitHeight: Kirigami.Units.iconSizes.smallMedium
+        }
+        Accessible.name: root.lyricsToggleText
+        onClicked: {
+            const cfg = plasmoid.configuration
+            if (cfg.lyricsSidePanelPosition === 0) {
+                cfg.lyricsSidePanelPosition = cfg.lyricsSidePanelLastSide === 1 ? 1 : 2
+            } else {
+                cfg.lyricsSidePanelLastSide = cfg.lyricsSidePanelPosition
+                cfg.lyricsSidePanelPosition = 0
+            }
+        }
+        PlasmaComponents3.ToolTip {
+            text: root.lyricsToggleText
+            visible: lyricsToggle.hovered
+        }
+    }
 }

@@ -14,3 +14,6 @@ Slider 1.0 Slider.qml
 TextField 1.0 TextField.qml
 ScrollBar 1.0 ScrollBar.qml
 MenuSeparator 1.0 MenuSeparator.qml
+AbstractButton 1.0 AbstractButton.qml
+TabBar 1.0 TabBar.qml
+TabButton 1.0 TabButton.qml

@@ -6,6 +6,7 @@ Item {
     property bool isMask: false
     property bool active: false
     property bool selected: false
+    property string fallback: ""
     property bool smooth: true
     property bool roundToIconSize: true
     implicitWidth: 16

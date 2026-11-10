@@ -11,13 +11,15 @@ QtObject {
         Complementary,
         Header
     }
-    readonly property color textColor: "#232629"
-    readonly property color disabledTextColor: "#7f8c8d"
+    /// Stub only: the snapshot harness flips this to render the dark palette (Breeze Light / Breeze Dark values).
+    property bool dark: false
+    readonly property color textColor: dark ? "#fcfcfc" : "#232629"
+    readonly property color disabledTextColor: dark ? "#a1a9b1" : "#7f8c8d"
     readonly property color highlightColor: "#3daee9"
     readonly property color highlightedTextColor: "#ffffff"
-    readonly property color backgroundColor: "#fcfcfc"
-    readonly property color alternateBackgroundColor: "#eff0f1"
-    readonly property color linkColor: "#2980b9"
+    readonly property color backgroundColor: dark ? "#232629" : "#fcfcfc"
+    readonly property color alternateBackgroundColor: dark ? "#31363b" : "#eff0f1"
+    readonly property color linkColor: dark ? "#1d99f3" : "#2980b9"
     readonly property color visitedLinkColor: "#7f8c8d"
     readonly property color positiveTextColor: "#27ae60"
     readonly property color neutralTextColor: "#f67400"
