@@ -20,6 +20,26 @@ QT6BIN="${QT6BIN:-/usr/lib/qt6/bin}"   # override for non-Plasma machines (docs/
 export QT_FORCE_STDERR_LOGGING=1   # Qt logs to journald otherwise (docs/DECISIONS.md D1)
 OFFSCREEN="env QT_QPA_PLATFORM=offscreen"
 
+# Plasma modules: on a machine without Plasma 6 (cloud/CI) use the pure-QML stubs in tests/qml/stubs.
+# On the user's desktop the real modules exist and the stubs are never put on the import path.
+STUB_IMPORT=()      # for qmltestrunner
+STUB_LINT_IMPORT=() # for qmllint
+STUBS_DETECTED=0
+detect_plasma_modules() {
+    [ "$STUBS_DETECTED" = 1 ] && return 0
+    STUBS_DETECTED=1
+    local probe out
+    probe="$(mktemp --suffix=.qml)"
+    printf 'import org.kde.kirigami\nimport org.kde.plasma.components\nimport org.kde.plasma.core\nimport QtQml\nQtObject { Component.onCompleted: Qt.quit() }\n' > "$probe"
+    out="$($OFFSCREEN timeout 60 "$QT6BIN/qml" "$probe" 2>&1 || true)"
+    rm -f "$probe"
+    if echo "$out" | grep -q 'is not installed'; then
+        echo "${c_dim}notice: using test stubs for Plasma modules (tests/qml/stubs)${c_off}"
+        STUB_IMPORT=(-import tests/qml/stubs)
+        STUB_LINT_IMPORT=(-I tests/qml/stubs)
+    fi
+}
+
 c_red=$'\e[31m'; c_grn=$'\e[32m'; c_dim=$'\e[2m'; c_off=$'\e[0m'
 step() { echo "${c_dim}── $*${c_off}"; }
 ok()   { echo "${c_grn}✔ $*${c_off}"; }
@@ -90,8 +110,9 @@ do_qmllint() {
     [ -f src/contents/ui/config/Lyrics.qml ] && files+=(src/contents/ui/config/Lyrics.qml)
     if [ ${#files[@]} -eq 0 ]; then ok "qmllint (no Lirik QML yet)"; return; fi
     local out
-    # -I so sibling and code imports resolve; plasma modules come from the system import path.
-    if ! out="$("$QT6BIN/qmllint" -I src/contents/ui -I src/contents/ui/lyrics "${files[@]}" 2>&1)"; then
+    detect_plasma_modules
+    # -I so sibling and code imports resolve; plasma modules come from the system import path (or the stubs).
+    if ! out="$("$QT6BIN/qmllint" "${STUB_LINT_IMPORT[@]}" -I src/contents/ui -I src/contents/ui/lyrics "${files[@]}" 2>&1)"; then
         echo "$out"
         die "qmllint"
     fi
@@ -136,10 +157,25 @@ do_v4() {
 
 do_qml() {
     step "qmltestrunner (offscreen)"
-    local out
-    out="$($OFFSCREEN timeout 300 "$QT6BIN/qmltestrunner" -input tests/qml -import src/contents/ui 2>&1)" || { echo "$out" | grep -vE '^PASS' | tail -60; die "qmltestrunner"; }
+    local out rc=0
+    detect_plasma_modules
+    # The stub server backs tests/qml/tst_stub.qml (those tests skip themselves when it is not up).
+    if [ -f tools/stub-server.mjs ] && [ -z "$STUB_PID" ]; then
+        mkdir -p .local
+        node tools/stub-server.mjs --port 47800 > .local/stub-qml.log 2>&1 &
+        STUB_PID=$!
+        local i
+        for i in $(seq 1 50); do
+            (echo > /dev/tcp/127.0.0.1/47800) 2>/dev/null && break
+            sleep 0.1
+        done
+    fi
+    out="$($OFFSCREEN timeout 300 "$QT6BIN/qmltestrunner" -input tests/qml -import src/contents/ui "${STUB_IMPORT[@]}" 2>&1)" || rc=$?
+    cleanup_bg
+    [ "$rc" = 0 ] || { echo "$out" | grep -vE '^PASS' | tail -60; die "qmltestrunner"; }
     local totals; totals="$(echo "$out" | grep -E '^Totals' | tail -1)"
     echo "$out" | grep -E '^FAIL' && die "qmltestrunner failures"
+    echo "$out" | grep -E '^SKIP' | head -5 || true
     ok "qmltestrunner: $totals"
 }
 

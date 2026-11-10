@@ -1,0 +1,11 @@
+module org.kde.kirigami
+singleton Units 1.0 Units.qml
+singleton Theme 1.0 Theme.qml
+singleton ColorUtils 1.0 ColorUtils.qml
+Icon 1.0 Icon.qml
+Heading 1.0 Heading.qml
+PlaceholderMessage 1.0 PlaceholderMessage.qml
+FormLayout 1.0 FormLayout.qml
+Separator 1.0 Separator.qml
+SelectableLabel 1.0 SelectableLabel.qml
+UrlButton 1.0 UrlButton.qml
