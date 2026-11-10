@@ -430,3 +430,23 @@ checked our Kirigami / libkmpris usage against the real KDE sources — no API m
   (`toggleSidePanel`).
 - **Credit line** is one translatable string ("Lyrics from %1, submitted by %2") split on placeholders into
   separate plain-text pieces, so links stay separate items and translators can reorder.
+
+## D21. Stub server ports (first desktop run)
+
+The first `./tools/dev.sh check` on the desktop failed three `tst_stub` tests and `perf` died with
+`EADDRINUSE 127.0.0.1:47800`: a stray process held the fixed stub port. `dev.sh` then started a new stub that
+crashed on startup, its "wait until 47800 answers" loop succeeded against the stray process, and the tests talked
+to the wrong server. Fixes:
+
+- `tools/stub-server.mjs --port 0` binds a free port (also for the second, redirect-target origin) and
+  `--port-file` writes `{port, second}` once both listen; `GET /__info` returns the same. EADDRINUSE on a fixed
+  port is a clear message and exit code 3, not an unhandled error.
+- `dev.sh qml` starts the stub on a free port and passes it to `tst_stub.qml` through a generated QML module
+  (`LirikTestEnv`, singleton `Env {stubPort, stubSecondPort}`) on a temporary import path; the test also checks
+  `/__info` reports that port, so it can never talk to another process. Run outside `dev.sh`, it skips.
+- `tools/e2e.mjs` and `tools/perf.mjs` launch the stub through `tools/stub-launch.mjs` (free port, wait for the
+  port file) and patch the temp package's `lyricsDevBaseUrl` with the real origin.
+- No leaks: the stub server and the fake player exit by themselves when their parent process goes away (they poll
+  `process.ppid`); e2e/perf clean up on exit, SIGINT, SIGTERM and SIGHUP; `dev.sh` traps INT/TERM/HUP too.
+- Verified in the container with impostor servers squatting on 47800 and 47801: 192/192 QML tests pass, no skips,
+  nothing left running.

@@ -125,7 +125,12 @@ Send back, as plain text (no screenshots of lyrics are needed; do not paste lyri
    Qt logs to the journal by default; `QT_FORCE_STDERR_LOGGING=1` puts it on the terminal. The widget's own
    debug lines start with `Lirik` (`Lirik panel mode=lyric|title`, `Lirik Http: GET <url without query>`,
    `Lirik resolver: ...`) and never contain lyric text.
-5. For lookups, the request log of the stub (`curl -s http://127.0.0.1:47800/__log` while `tools/stub-server.mjs`
-   runs) or, against the real providers, the `Lirik Http: GET` lines above.
+5. For lookups, the request log of the stub (`curl -s http://127.0.0.1:<port>/__log` while `tools/stub-server.mjs`
+   runs; `e2e`/`perf` print the port as "stub server on http://127.0.0.1:<port>", and a manual
+   `node tools/stub-server.mjs` uses 47800) or, against the real providers, the `Lirik Http: GET` lines above.
+7. "address already in use" or stub tests failing with `network error`: since D21 the tools pick a free port and
+   the stub server exits when its parent dies, so this should not happen any more. If an old leftover server
+   from before that change is still running: `pgrep -fa tools/stub-server.mjs` and `pkill -f tools/stub-server.mjs`
+   (same for `tools/fake-player.mjs`).
 6. After installing into the real panel, `journalctl --user -b | grep -i lirik` for anything the shell printed.
    Do not restart plasmashell to reproduce; log out and in if the widget needs a reload.

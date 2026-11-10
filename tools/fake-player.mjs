@@ -260,5 +260,9 @@ rl.on("line", (line) => {
 })
 // Keep running even when stdin closes (e.g. started from a script with </dev/null).
 rl.on("close", () => {})
+// Exit when the parent goes away (killed runner, closed terminal) so no orphan keeps the MPRIS name.
+const PARENT_PID = process.ppid
+setInterval(() => { if (process.ppid !== PARENT_PID) process.exit(0) }, 1000).unref()
+process.on("SIGHUP", () => process.exit(0))
 process.on("SIGTERM", () => process.exit(0))
 process.on("SIGINT", () => process.exit(0))

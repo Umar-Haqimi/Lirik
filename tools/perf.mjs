@@ -19,10 +19,11 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { launchStub } from "./stub-launch.mjs"
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(HERE, "..")
-const PORT = 47800
+const STUB_ORIGIN_TOKEN = "@LIRIK_STUB_ORIGIN@" // replaced by the real origin once the stub listens
 const FAKE_IDENTITY = "Lirik Fake Player"
 const TRACK = path.join(ROOT, "tests", "fixtures", "tracks", "word-gap.json")
 const BOOT_MS = 8000
@@ -48,6 +49,9 @@ function die(msg) {
     process.exit(1)
 }
 process.on("SIGINT", () => { cleanup(); process.exit(130) })
+process.on("SIGTERM", () => { cleanup(); process.exit(143) })
+process.on("SIGHUP", () => { cleanup(); process.exit(129) })
+process.on("exit", () => cleanup())
 
 const have = (cmd) => spawnSync("sh", ["-c", "command -v " + cmd], { encoding: "utf8" }).status === 0
 const missing = []
@@ -80,7 +84,7 @@ function patchDefault(name, type, value) {
     if (!re.test(xml)) die("could not patch the " + name + " default in main.xml")
     xml = xml.replace(re, "$1" + value + "$2")
 }
-patchDefault("lyricsDevBaseUrl", "String", "http://127.0.0.1:" + PORT)
+patchDefault("lyricsDevBaseUrl", "String", STUB_ORIGIN_TOKEN)
 patchDefault("choosePlayerAutomatically", "Bool", "false")
 patchDefault("preferredPlayerIdentity", "String", FAKE_IDENTITY)
 fs.writeFileSync(xmlPath, xml)
@@ -96,7 +100,16 @@ function run(name, cmd, args, env) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-const stub = run("stub-server", "node", ["tools/stub-server.mjs", "--port", String(PORT)])
+let stub, stubOrigin
+try {
+    const st = await launchStub(run, tmp)
+    stub = st.stub
+    stubOrigin = st.origin
+} catch (e) {
+    die(e.message)
+}
+fs.writeFileSync(xmlPath, fs.readFileSync(xmlPath, "utf8").replace(STUB_ORIGIN_TOKEN, stubOrigin))
+console.log("perf: stub server on " + stubOrigin)
 const fake = run("fake-player", "node", ["tools/fake-player.mjs", "--name", "lirikfake"])
 await sleep(800)
 if (stub.proc.exitCode !== null) die("stub-server exited early:\n" + stub.text)

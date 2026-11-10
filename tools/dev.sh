@@ -173,18 +173,30 @@ do_qml() {
     step "qmltestrunner (offscreen)"
     local out rc=0
     detect_plasma_modules
-    # The stub server backs tests/qml/tst_stub.qml (those tests skip themselves when it is not up).
+    # The stub server backs tests/qml/tst_stub.qml. It binds a FREE port (a stray process on a fixed port must
+    # never be mistaken for it); the port reaches the test through a generated QML module on a temp import path.
+    local envdir; envdir="$(mktemp -d)"
+    TMP_DIRS+=("$envdir")
+    local sport=0 ssecond=0
     if [ -f tools/stub-server.mjs ] && [ -z "$STUB_PID" ]; then
         mkdir -p .local
-        node tools/stub-server.mjs --port 47800 > .local/stub-qml.log 2>&1 &
+        local pfile="$envdir/stub-port.json"
+        node tools/stub-server.mjs --port 0 --port-file "$pfile" > .local/stub-qml.log 2>&1 &
         STUB_PID=$!
         local i
         for i in $(seq 1 50); do
-            (echo > /dev/tcp/127.0.0.1/47800) 2>/dev/null && break
+            [ -s "$pfile" ] && break
+            kill -0 "$STUB_PID" 2>/dev/null || break
             sleep 0.1
         done
+        [ -s "$pfile" ] || { cat .local/stub-qml.log; die "stub server did not start (see .local/stub-qml.log)"; }
+        sport="$(node -e "const j=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(j.port||0)" "$pfile")"
+        ssecond="$(node -e "const j=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(j.second||0)" "$pfile")"
     fi
-    out="$($OFFSCREEN timeout 300 "$QT6BIN/qmltestrunner" -input tests/qml -import src/contents/ui "${STUB_IMPORT[@]}" 2>&1)" || rc=$?
+    mkdir -p "$envdir/LirikTestEnv"
+    printf 'module LirikTestEnv\nsingleton Env 1.0 Env.qml\n' > "$envdir/LirikTestEnv/qmldir"
+    printf 'pragma Singleton\nimport QtQml\nQtObject {\n    readonly property int stubPort: %s\n    readonly property int stubSecondPort: %s\n}\n' "$sport" "$ssecond" > "$envdir/LirikTestEnv/Env.qml"
+    out="$($OFFSCREEN timeout 300 "$QT6BIN/qmltestrunner" -input tests/qml -import src/contents/ui -import "$envdir" "${STUB_IMPORT[@]}" 2>&1)" || rc=$?
     cleanup_bg
     [ "$rc" = 0 ] || { echo "$out" | grep -vE '^PASS' | tail -60; die "qmltestrunner"; }
     local totals; totals="$(echo "$out" | grep -E '^Totals' | tail -1)"
@@ -193,13 +205,17 @@ do_qml() {
     ok "qmltestrunner: $totals"
 }
 
-FAKE_PID=""; STUB_PID=""
+FAKE_PID=""; STUB_PID=""; TMP_DIRS=()
 cleanup_bg() {
     [ -n "$FAKE_PID" ] && kill "$FAKE_PID" 2>/dev/null || true
     [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null || true
     FAKE_PID=""; STUB_PID=""
+    local d
+    for d in "${TMP_DIRS[@]}"; do rm -rf "$d"; done
+    TMP_DIRS=()
 }
 trap cleanup_bg EXIT
+trap 'cleanup_bg; exit 130' INT TERM HUP
 
 do_smoke() {
     step "smoke: offscreen plasmoidviewer + fake player (20 s)"
@@ -211,7 +227,7 @@ do_smoke() {
     node tools/fake-player.mjs --name lirikfake --autoplay tests/fixtures/tracks/smoke.json < /dev/null > .local/smoke/fake.log 2>&1 &
     FAKE_PID=$!
     if [ -f tools/stub-server.mjs ]; then
-        node tools/stub-server.mjs --port 47800 > .local/smoke/stub.log 2>&1 &
+        node tools/stub-server.mjs --port 0 > .local/smoke/stub.log 2>&1 &
         STUB_PID=$!
     fi
     sleep 1

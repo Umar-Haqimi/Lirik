@@ -2,13 +2,17 @@ import QtQuick
 import QtTest
 import "../../src/contents/ui/lyrics"
 
-// Integration against tools/stub-server.mjs (dev.sh qml starts it on 127.0.0.1:47800).
-// Skipped, not failed, when nothing is listening there.
+// Integration against tools/stub-server.mjs. tools/dev.sh starts it on a FREE port (--port 0) and hands the
+// port to this test through a generated QML module `LirikTestEnv` (singleton Env {stubPort, stubSecondPort})
+// on a temporary import path. Run outside dev.sh (no module) or with no server answering as the stub
+// (checked via /__info), every test here is skipped, not failed.
 TestCase {
     id: tc
     name: "StubServer"
 
-    readonly property string base: "http://127.0.0.1:47800"
+    property int port: 0
+    property int secondPort: 0
+    readonly property string base: port > 0 ? "http://127.0.0.1:" + port : "http://127.0.0.1:1"
     property bool up: false
     property var calls: []
 
@@ -36,18 +40,35 @@ TestCase {
     }
 
     function initTestCase() {
+        try {
+            const env = Qt.createQmlObject("import QtQml; import LirikTestEnv; QtObject { property int p: Env.stubPort; property int s: Env.stubSecondPort }", tc, "env")
+            port = env.p
+            secondPort = env.s
+            env.destroy()
+        } catch (e) {
+            port = 0
+        }
+        if (port <= 0) {
+            console.warn("no stub server port (run through tools/dev.sh qml); integration tests skipped")
+            return
+        }
+        // Make sure the server on that port really is our stub (not some other process).
         const x = new XMLHttpRequest()
         let finished = false
         x.onreadystatechange = function () {
             if (x.readyState === 4) {
-                up = x.status === 200
+                try {
+                    up = x.status === 200 && JSON.parse(x.responseText).port === port
+                } catch (err) {
+                    up = false
+                }
                 finished = true
             }
         }
-        x.open("GET", base + "/__log")
+        x.open("GET", base + "/__info")
         x.send()
         tryVerify(function () { return finished }, 3000)
-        if (!up) console.warn("stub server not running on " + base + "; integration tests skipped")
+        if (!up) console.warn("no stub server answering on " + base + "; integration tests skipped")
     }
 
     function init() {
@@ -109,9 +130,10 @@ TestCase {
 
     function test_http_redirect_to_another_origin_is_refused() {
         if (!up) skip("stub server not running")
+        if (secondPort <= 0) skip("the stub server's second origin is not available")
         // 302 to a second 127.0.0.1 port: not the configured dev origin, so the response must not be delivered
         const h = createTemporaryObject(httpComp, tc)
-        h.request({ url: base + "/__redirect?to=" + encodeURIComponent("http://127.0.0.1:47801/api/get?track_name=Line%20Placeholder") }, cb)
+        h.request({ url: base + "/__redirect?to=" + encodeURIComponent("http://127.0.0.1:" + secondPort + "/api/get?track_name=Line%20Placeholder") }, cb)
         tryCompare(calls, "length", 1, 5000)
         compare(calls[0].res, null)
         verify(calls[0].err !== null)

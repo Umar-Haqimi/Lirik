@@ -8,7 +8,7 @@
 // using the "Lirik panel mode=lyric|title" markers CompactLyrics writes with console.debug (no lyric text).
 //
 // How the widget reaches the stub server: plasmoidviewer has no way to pass configuration, so this script runs a
-// COPY of src/ in a temp directory whose main.xml default for `lyricsDevBaseUrl` is http://127.0.0.1:47800
+// COPY of src/ in a temp directory whose main.xml default for `lyricsDevBaseUrl` is the stub origin (a free 127.0.0.1 port)
 // (the allow-list in Http.qml accepts only that loopback form, and only while lyricsDevBaseUrl is set). The real
 // src/ is never modified. XDG_CONFIG_HOME / XDG_DATA_HOME / XDG_CACHE_HOME point at the temp directory too, so
 // the viewer starts without cached lyrics and never touches the user's Plasma configuration (SPEC trap 16:
@@ -23,10 +23,11 @@ import os from "node:os"
 import path from "node:path"
 import http from "node:http"
 import { fileURLToPath } from "node:url"
+import { launchStub } from "./stub-launch.mjs"
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(HERE, "..")
-const PORT = 47800
+const STUB_ORIGIN_TOKEN = "@LIRIK_STUB_ORIGIN@" // replaced by the real origin once the stub listens
 const FAKE_IDENTITY = "Lirik Fake Player"
 const KEEP = process.argv.includes("--keep")
 // Track "Gapped Placeholder" (tools/stub-server.mjs): lines 4.0-9.5 s, 20.0-26.5 s, 38.5-41.5 s.
@@ -56,6 +57,9 @@ function cleanup() {
     }
 }
 process.on("SIGINT", () => { cleanup(); process.exit(130) })
+process.on("SIGTERM", () => { cleanup(); process.exit(143) })
+process.on("SIGHUP", () => { cleanup(); process.exit(129) })
+process.on("exit", () => cleanup())
 
 // --- prerequisites -------------------------------------------------------------------------
 const missing = []
@@ -83,7 +87,7 @@ function patchDefault(text, name, type, value) {
     if (out === text && !re.test(text)) die("could not patch the " + name + " default in main.xml (entry not found)")
     return out
 }
-let patched = patchDefault(xml, "lyricsDevBaseUrl", "String", "http://127.0.0.1:" + PORT)
+let patched = patchDefault(xml, "lyricsDevBaseUrl", "String", STUB_ORIGIN_TOKEN)
 patched = patchDefault(patched, "choosePlayerAutomatically", "Bool", "false")
 patched = patchDefault(patched, "preferredPlayerIdentity", "String", FAKE_IDENTITY) // Identity of tools/fake-player.mjs
 fs.writeFileSync(xmlPath, patched)
@@ -100,7 +104,16 @@ function run(name, cmd, args, env) {
     return out
 }
 
-const stub = run("stub-server", "node", ["tools/stub-server.mjs", "--port", String(PORT)])
+let stub, stubOrigin
+try {
+    const st = await launchStub(run, tmp)
+    stub = st.stub
+    stubOrigin = st.origin
+} catch (e) {
+    die(e.message)
+}
+fs.writeFileSync(xmlPath, fs.readFileSync(xmlPath, "utf8").replace(STUB_ORIGIN_TOKEN, stubOrigin))
+console.log("e2e: stub server on " + stubOrigin)
 const fake = run("fake-player", "node", ["tools/fake-player.mjs", "--name", "lirikfake"])
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -157,7 +170,7 @@ if (seen.join(",") !== EXPECTED.join(",")) {
 const errs = viewer.text.split("\n").filter((l) => /TypeError|ReferenceError|SyntaxError|is not installed|Cannot assign/.test(l) && !/org\.kde\.desktopcontainment/.test(l))
 if (errs.length) problems.push("QML errors in the viewer log:\n    " + errs.slice(0, 8).join("\n    "))
 let requests = []
-try { requests = await getJson("http://127.0.0.1:" + PORT + "/__log") } catch (_e) { /* reported below */ }
+try { requests = await getJson(stubOrigin + "/__log") } catch (_e) { /* reported below */ }
 if (!Array.isArray(requests) || requests.length === 0) problems.push("the stub server saw no provider request (lyricsDevBaseUrl not applied?)")
 
 if (!KEEP) {

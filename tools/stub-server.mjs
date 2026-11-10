@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 // Local stand-in for LRCLIB and Unison (dev/test only, never shipped). SPEC §7.1.
 //
-//   node tools/stub-server.mjs [--port 47800]
+//   node tools/stub-server.mjs [--port 47800] [--port-file <path>]
+//
+// --port 0 binds a free port (what tools/dev.sh, e2e.mjs and perf.mjs do, so a stray process on a fixed port
+// can never be mistaken for this server). --port-file writes {"port", "second"} as JSON once both origins listen.
+// The server exits on its own when the process that started it goes away (no leaked servers).
 //
 // Serves both providers on one origin (the widget's lyricsDevBaseUrl replaces both bases):
 //   LRCLIB:  /api/get   /api/get/:id   /api/v2/search   /api/search
@@ -18,7 +22,8 @@
 //   ~latencyN   delay the response N ms        ~404   force not found       ~429   rate limited (Retry-After 3)
 //   ~503        plain 503                      ~500   server error          ~pending  Unison 503 LOOKUP_PENDING
 //                                                                            for the first two requests (Retry-After 1)
-// GET /__redirect?to=<url> answers 302 to <url>; the same handler also listens on PORT + 1 (a second origin).
+// GET /__redirect?to=<url> answers 302 to <url>; the same handler also listens on a second origin (PORT + 1, or a
+// free port with --port 0). GET /__info returns {"port", "second"}.
 // Control endpoint: POST /__control {"latencyMs":N,"status":404|429|500|503|"pending"|null,"retryAfter":S,"reset":true}
 //   applies to every provider request until reset. GET /__log returns the request log, DELETE /__log clears it.
 // Every provider request is also printed to stdout as one JSON line {t, provider, path, query}.
@@ -33,6 +38,16 @@ const FIX = path.join(HERE, "..", "tests", "fixtures")
 const args = process.argv.slice(2)
 const pi = args.indexOf("--port")
 const PORT = pi >= 0 ? Number(args[pi + 1]) : 47800
+const pf = args.indexOf("--port-file")
+const PORT_FILE = pf >= 0 ? args[pf + 1] : null
+let actualPort = PORT
+let secondPort = null
+
+// Exit when the parent goes away (killed test runner, closed terminal): the orphan is re-parented, so ppid changes.
+const PARENT = process.ppid
+setInterval(function () { if (process.ppid !== PARENT) process.exit(0) }, 1000).unref()
+process.on("SIGTERM", function () { process.exit(0) })
+process.on("SIGHUP", function () { process.exit(0) })
 
 const read = (rel) => fs.readFileSync(path.join(FIX, rel), "utf8")
 
@@ -242,6 +257,7 @@ function handleProvider(provider, req, res, url) {
 const server = http.createServer(function (req, res) {
     const url = new URL(req.url, "http://127.0.0.1")
     const p = url.pathname
+    if (p === "/__info") return send(res, 200, { port: actualPort, second: secondPort })
     if (p === "/__log") {
         if (req.method === "DELETE") log.length = 0
         return send(res, 200, log)
@@ -283,10 +299,29 @@ const server = http.createServer(function (req, res) {
     return send(res, 404, { error: "not found" })
 })
 
-server.listen(PORT, "127.0.0.1", function () {
-    console.error("stub-server listening on http://127.0.0.1:" + PORT)
+server.on("error", function (e) {
+    if (e && e.code === "EADDRINUSE") {
+        console.error("stub-server: port " + PORT + " is already in use. A leftover stub server? Check with\n" +
+            "  ss -ltnp 'sport = :" + PORT + "'   and stop it (e.g. pkill -f tools/stub-server.mjs), or use --port 0.")
+    } else {
+        console.error("stub-server: cannot listen: " + (e && e.message))
+    }
+    process.exit(3)
 })
-// A second origin (PORT + 1) served by the same handler: the target of the redirect-refusal test.
-const second = http.createServer(server.listeners("request")[0])
-second.on("error", function (e) { console.error("stub-server: second origin not available: " + e.message) })
-second.listen(PORT + 1, "127.0.0.1")
+server.listen(PORT, "127.0.0.1", function () {
+    actualPort = server.address().port
+    console.error("stub-server listening on http://127.0.0.1:" + actualPort)
+    // A second origin served by the same handler: the target of the redirect-refusal test. Optional.
+    const second = http.createServer(server.listeners("request")[0])
+    const done = function () {
+        if (PORT_FILE) fs.writeFileSync(PORT_FILE, JSON.stringify({ port: actualPort, second: secondPort }))
+    }
+    second.on("error", function (e) {
+        console.error("stub-server: second origin not available: " + e.message)
+        done()
+    })
+    second.listen(PORT === 0 ? 0 : PORT + 1, "127.0.0.1", function () {
+        secondPort = second.address().port
+        done()
+    })
+})
