@@ -31,6 +31,12 @@ export const cases = [
     { name: "indented sequences and nested compact mappings", fn: () => {
         assert.deepEqual(y("l:\n  - a: 1\n    w:\n      - t: x\n      - t: y\n  - a: 2\n"), { l: [{ a: "1", w: [{ t: "x" }, { t: "y" }] }, { a: "2" }] })
     } },
+    { name: "keep chomping at end of input does not add a phantom blank line", fn: () => {
+        assert.deepEqual(y("a: |+\n  x\n"), { a: "x\n" })
+        assert.deepEqual(y("a: |+\n  x\n\n\n"), { a: "x\n\n\n" })
+        assert.deepEqual(y("a: >+\n  x\n\n"), { a: "x\n\n" })
+        assert.deepEqual(y("a: |+\n  x"), { a: "x\n" })
+    } },
     { name: "block scalars | |- |+ > >-", fn: () => {
         const v = y("a: |\n  l1\n\n  l2\nb: |-\n  x\nc: |+\n  k\n\nd: >\n  f1\n  f2\n\n  f3\n    more\n  back\ne: >-\n  a\n  b\n")
         assert.equal(v.a, "l1\n\nl2\n")

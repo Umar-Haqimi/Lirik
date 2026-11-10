@@ -16,7 +16,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-QT6BIN=/usr/lib/qt6/bin
+QT6BIN="${QT6BIN:-/usr/lib/qt6/bin}"   # override for non-Plasma machines (docs/DECISIONS.md D15)
 export QT_FORCE_STDERR_LOGGING=1   # Qt logs to journald otherwise (docs/DECISIONS.md D1)
 OFFSCREEN="env QT_QPA_PLATFORM=offscreen"
 
@@ -106,12 +106,15 @@ do_lint() {
 
 do_node() {
     step "node --test"
-    node --test tests/node/ 2>&1 | tail -n 9 > /tmp/lirik-node-$$.txt || { cat /tmp/lirik-node-$$.txt; node --test tests/node/ 2>&1 | grep -B2 -A20 'not ok' | head -80; rm -f /tmp/lirik-node-$$.txt; die "node tests"; }
-    local pass fail
-    pass=$(grep -E '^ℹ pass' /tmp/lirik-node-$$.txt | awk '{print $3}')
-    fail=$(grep -E '^ℹ fail' /tmp/lirik-node-$$.txt | awk '{print $3}')
-    rm -f /tmp/lirik-node-$$.txt
-    [ "$fail" = "0" ] || die "node tests: $fail failed"
+    # Explicit glob + TAP reporter so Node 22 and 26 print the same summary (docs/DECISIONS.md D15).
+    local out pass fail
+    out="$(node --test --test-reporter=tap tests/node/*.test.mjs 2>&1)" || true
+    pass=$(echo "$out" | grep -E '^# pass ' | awk '{print $3}')
+    fail=$(echo "$out" | grep -E '^# fail ' | awk '{print $3}')
+    if [ -z "$pass" ] || [ "$fail" != "0" ]; then
+        echo "$out" | grep -B2 -A25 -E '^\s*not ok' | head -120
+        die "node tests (pass=${pass:-?} fail=${fail:-?})"
+    fi
     ok "node --test: $pass passed"
 }
 

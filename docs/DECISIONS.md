@@ -189,3 +189,41 @@ height does not centre awkwardly. On the desktop (planar form factor), the panel
 
 - Plugin Id `my.umarh.lirik`; translation domain `plasma_applet_my.umarh.lirik`.
 - Fork mechanics: the repo was created from upstream at `0e78da1` (history kept), remote `upstream`.
+- **Background vocals** (TTML `x-bg` spans, both the wrapper and the self-timed form) live in `line.bgWords`,
+  separate from `line.words`, so the panel and the karaoke wipe only walk the lead vocal. `line.text` excludes
+  them. A line made only of background vocals has `background: true` and its words in `words`. Braccato mixes
+  them into `parts`/`words` with `isBackground`; the differential test merges ours back before comparing.
+- **Several leading LRC time tags repeat the line** (`[00:10.00][00:40.00]text` makes two lines). Braccato keeps
+  only the first tag, so `multi-time.lrc` is excluded from the differential test.
+- **Empty YAML value is `""`** (`key:` with nothing under it), as in the YAML failsafe schema; every scalar stays
+  text and callers coerce by field. The `yaml` reference is run with `schema: "failsafe"`.
+- **`[offset:]` intentionally differs from Braccato** (D12): milliseconds, positive = earlier. `offset.lrc` is
+  excluded from the differential test.
+- Other intentional differences from Braccato, handled by normalization or exclusion in
+  `tests/node/braccato.test.mjs`: (a) `[mm:ss]` tags without a fraction are accepted by us, Braccato returns no
+  lines (`no-fraction.lrc` excluded); (b) we sort lines by start (stable), Braccato keeps document order (the
+  comparison sorts Braccato's lines); (c) we decode common HTML named entities such as `&eacute;` leniently,
+  Braccato leaves them literal (normalized); (d) we keep whitespace inside word texts (`"la "`), Braccato emits
+  separate whitespace parts (filtered, texts trimmed); (e) our word `end` may be null when the source states
+  none, so ends are compared only when stated; (f) our `line.end` is not compared (Braccato fills durations up
+  to the next line); (g) Braccato's synthetic instrumental lines are filtered.
+- Differences from the `yaml` package: ours rejects anchors, aliases, tags, complex keys, duplicate keys, tab
+  indentation, multiple documents and nesting beyond `MAX_YAML_DEPTH`; inside the supported subset the output is
+  deep-equal (500 seeded random documents plus every Lyricsfile fixture). The differential test found one real
+  bug, fixed with a shared case: a trailing `|+`/`>+` block scalar at end of input gained a phantom blank line
+  (the empty piece after the final newline was treated as a line).
+- **Fuzz budget** (SPEC §7.2): each parser runs 2000 seeded mutations (it already did), none may throw, and each
+  must finish within 50 ms. Mean cost is about 0.03 ms per input in Node (all 10000 inputs in well under a
+  second), so there is no slow path. The V4 host occasionally saw a single input exceed 50 ms once (about 1 run
+  in 8) and run in ~1 ms on re-timing, i.e. engine GC/scheduler jitter, not quadratic behaviour. An over-budget
+  sample is therefore re-timed up to 3 times on the same input and judged by the fastest run, so a genuinely slow
+  input (slow every time) still fails. The whole V4 run stays far below 60 s.
+
+## D15. Cloud build environment
+
+Development continued in an Ubuntu 24.04 cloud container with Node 22 and an `aqtinstall` Qt 6.12.0 tree at
+`/opt/qt/6.12.0/gcc_64` (same Qt version as the desktop). `tools/dev.sh` honours a `QT6BIN` override
+(`export QT6BIN=/opt/qt/6.12.0/gcc_64/bin`), defaulting to `/usr/lib/qt6/bin`. There is no Plasma 6 there, so
+the `smoke` stage (plasmoidviewer) is skipped in that container; lint, node, V4 and qmltestrunner run.
+`node --test` is invoked with an explicit glob (`tests/node/*.test.mjs`) and `--test-reporter=tap` so Node 22 and
+Node 26 (whose default directory handling and summary format differ) behave the same.
