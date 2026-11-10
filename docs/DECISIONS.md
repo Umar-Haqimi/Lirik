@@ -227,3 +227,34 @@ Development continued in an Ubuntu 24.04 cloud container with Node 22 and an `aq
 the `smoke` stage (plasmoidviewer) is skipped in that container; lint, node, V4 and qmltestrunner run.
 `node --test` is invoked with an explicit glob (`tests/node/*.test.mjs`) and `--test-reporter=tap` so Node 22 and
 Node 26 (whose default directory handling and summary format differ) behave the same.
+
+## D16. Timeline and clock (M3)
+
+`timeline.frame(lyrics, tMs, opts)` and `clock.mjs` APIs are documented in their file headers. Choices:
+
+- **Gap length** = next start − the max `effEnd` of every line already started (prefix max), so a long line
+  spanning shorter ones covers the silence. The threshold is inclusive (≥); linger and lead-in windows are
+  inclusive at their start. If a silence is shorter than `leadInMs + lingerMs` the gap window is empty and the
+  state never becomes `gap`.
+- **Primary** is −1 outside `line`. `line` with an empty `active` means a line lingers. During silence the
+  lingering line is the one that *ended last* (`prefArg`), never an older line that merely started last (Opus
+  review finding: a long overlapping line ending must not resurrect a short one). Lead-in applies only when
+  nothing is active; with tied starts the highest index of the group is primary, so nothing flips at the start.
+- **Zero-length lines** (`end === start`, e.g. TTML `begin == end`) are never active or primary and are ignored for
+  the gap computation; they still count for `last` / `upcoming`.
+- **`nextChangeAt` is exact** (verified by an Opus brute-force comparison against a naive reference over
+  ~500k frames): the discrete fields at `nextChangeAt − 1` equal those at `t` and differ at `nextChangeAt`.
+- **Index cache**: the per-lyrics search index lives on the lyrics object as a non-enumerable `_tl`
+  (`Object.defineProperty`, skipped by `JSON.stringify`), rebuilt when the lines array identity/length changes.
+  Normalized lyrics are treated as immutable.
+- **Clock**: `report()` compares against the estimate at the sample's wall time. A rate ≤ 0 reported while
+  playing freezes the estimate; a missing/NaN rate means 1. A wall clock stepping back never rewinds the track.
+  Callers pass `anchor = null` on a track change (report() cannot see track changes). Callers must reschedule
+  their timer on `silent` re-anchors too (just without resetting animations).
+- **`msUntil` returns −1 for "never"** (paused, rate ≤ 0, infinite/NaN target), never `Infinity`: a QML
+  `Timer.interval` would coerce Infinity to 0 and spin (trap 12). It rounds up (a timer never fires early) and
+  is capped at 2^31−1.
+- **P0 test** (trap 1) simulates the shipped design: a player that reports only on 1 s polls and signalled events
+  (Seeked, status, rate), a displayed frame that changes only when a single-shot timer scheduled with
+  `msUntil(nextChangeAt)` fires or the anchor changes, a 30 ms unsignalled drift (ignored) and a 150 ms one
+  (silent re-anchor). Mutants (estimate = posMs, rate ignored, no silent re-anchor) all fail it.
