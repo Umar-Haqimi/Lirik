@@ -31,9 +31,9 @@ Run from a checkout of this repository.
   (needs a player; the fake player works: `node tools/fake-player.mjs --autoplay tests/fixtures/tracks/smoke.json`
   in another terminal, plus `node tools/stub-server.mjs` if you want lyrics from the stub).
 - [ ] `./tools/dev.sh view vertical` opens and does not break (panel stays in title mode, by design).
-- [ ] `./tools/dev.sh package` builds `lirik-1.0.0.plasmoid`; on this machine it also prints
+- [ ] `./tools/dev.sh package` builds `lirik-1.1.0.plasmoid`; on this machine it also prints
   `kpackagetool6 accepted ...` (validated in a temporary root).
-- [ ] Install: `kpackagetool6 -t Plasma/Applet -i src/` (or `-i lirik-1.0.0.plasmoid`; later `-u`).
+- [ ] Install: `kpackagetool6 -t Plasma/Applet -i src/` (or `-i lirik-1.1.0.plasmoid`; later `-u`).
 - [ ] `kpackagetool6 -t Plasma/Applet --list` shows **both** `my.umarh.lirik` and, if installed, upstream
   `plasmusic-toolbar`.
 - [ ] Right-click the panel, Add Widgets, find "Lirik", add it to the panel. It appears and shows the playing
@@ -65,8 +65,11 @@ one local player (Elisa, VLC or mpv) with a tagged file. For each:
 - [ ] A track with no lyrics shows the "not found" state; an instrumental shows the instrumental state.
 - [ ] Better Lyrics API: with only **Better Lyrics** ticked, a popular song gives word- or line-synced lyrics and the
   footer says "Lyrics from Better Lyrics" (link opens https://better-lyrics.boidu.dev); an obscure song is "not
-  found". Tick **Kugou (Better Lyrics)** / **QQ (Better Lyrics)** too: they appear in **Ask first**, picking one
-  moves it to the front, and the choice survives closing and reopening Settings.
+  found". Tick **Kugou (Better Lyrics)** / **QQ (Better Lyrics)** too, drag rows in the provider list (and try
+  Alt+Up / Alt+Down on a focused row): the order and the ticks survive closing and reopening Settings.
+- [ ] Provider priority: with **Always use the highest provider that has lyrics** off, word-synced lyrics from a
+  lower provider still beat line-synced ones from a higher one; with it on, the top provider that has lyrics wins.
+  (Clear the cache between tries: stored lyrics are not re-ranked.)
 
 ## 3. Once each
 

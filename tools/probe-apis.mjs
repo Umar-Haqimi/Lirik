@@ -11,7 +11,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-const UA = "Lirik/1.0.0 (https://github.com/Umar-Haqimi/lirik)"
+const UA = "Lirik/1.1.0 (https://github.com/Umar-Haqimi/lirik)"
 const OUT = path.resolve(".local/samples")
 const dry = process.argv.includes("--dry-run")
 

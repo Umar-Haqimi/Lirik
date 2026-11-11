@@ -100,6 +100,18 @@ Milestones from `docs/SPEC.md` §8. Each one ends with `./tools/dev.sh check` gr
 - Note: the local clone carries upstream's tags (v0.2 … v4.3.1, including a `v1.0.0`); origin has none. Delete the
   local `v1.0.0` before tagging the release.
 
+## Release 1.1.0 (2026-11-11)
+
+- Covers the four commits after 1.0.0 up to 9364ec2: Better Lyrics API providers (D24) and the drag-and-drop
+  provider priority list with strict order (D25).
+- Version bumped to 1.1.0 in `src/metadata.json`, `constants.mjs`, `package.json`, the release-please manifest and
+  the docs. `lirik-1.1.0.plasmoid` built with `tools/package.sh` in the cloud container (69 files; kpackagetool6
+  validation not run there). Node suite green (540 tests, 3 skipped); QML tests not run in this session.
+- `template.pot` and the `.po` files re-extracted (3 new untranslated strings per language, no translation lost);
+  `bin/i18n check` passes.
+- `CHANGELOG.md` has the 1.1.0 section; the GitHub release body is `docs/releases/v1.1.0.md`. The 1.0.0 release
+  was tagged `1.0.0` (no `v`), so 1.1.0 uses tag `1.1.0`; the 1.0.0 changelog link was corrected to match.
+
 ## Next
 1. Interactive manual inspection (`./tools/dev.sh view horizontal` / `view planar`) and user's per-player testing (`docs/MANUAL_TEST.md`).
 2. MVP acceptance (SPEC §9), then N1 … N8 (SPEC §3), one milestone each.

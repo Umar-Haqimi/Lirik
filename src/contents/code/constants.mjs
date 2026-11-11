@@ -1,7 +1,7 @@
 // Every tunable number in one place (SPEC §5). Pure module: no Qt, no timers, no network.
 // Must stay inside the V4 subset (docs/DECISIONS.md D2).
 
-export const LIRIK_VERSION = "1.0.0"
+export const LIRIK_VERSION = "1.1.0"
 export const LIRIK_REPO_URL = "https://github.com/Umar-Haqimi/lirik"
 export const USER_AGENT = "Lirik/" + LIRIK_VERSION + " (" + LIRIK_REPO_URL + ")"
 

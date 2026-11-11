@@ -49,7 +49,7 @@ kpackagetool6 -t Plasma/Applet -r my.umarh.lirik   # remove
 From a package built by `./tools/dev.sh package`:
 
 ```sh
-kpackagetool6 -t Plasma/Applet -i lirik-1.0.0.plasmoid
+kpackagetool6 -t Plasma/Applet -i lirik-1.1.0.plasmoid
 ```
 
 Then right-click the panel, **Add Widgets**, search for "Lirik" and drag it onto the panel (or the desktop).

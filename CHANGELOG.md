@@ -1,6 +1,40 @@
 # Changelog
 
-## [1.0.0](https://github.com/Umar-Haqimi/Lirik/releases/tag/v1.0.0) (2026-11-11)
+## [1.1.0](https://github.com/Umar-Haqimi/Lirik/compare/1.0.0...1.1.0) (2026-11-11)
+
+Adds the Better Lyrics API as a lyrics source and replaces the "Ask Unison first" option with a provider priority
+list you sort by drag and drop.
+
+### Features
+
+* **Better Lyrics API providers:** three new providers backed by `api.betterlyrics.org`, each with its own
+  checkbox: **Better Lyrics** (Apple-style TTML, word or line timing; on by default), **Kugou (Better Lyrics)**
+  (LRC) and **QQ (Better Lyrics)** (QRC with word timing), both opt-in. The API serves only songs it already has
+  cached; its "API key required" answer (`401`) is treated as "not found" and retried after 6 h, while `503`
+  (cache-only mode) is a temporary error and is not cached. The three share one rate-limit cooldown, and
+  results are credited as "Lyrics from <name>" with a link to the Better Lyrics site.
+* **QRC parser:** QQ word-timed lyrics, bare or inside the XML wrapper, with a fallback to LRC; written for the
+  Plasma QML engine and fuzz-tested.
+* **Provider priority list:** one draggable list on the Lyrics settings page (checkbox per row; Alt+Up / Alt+Down
+  on a focused row) sets the order of all five providers. Unticked rows keep their place. The saved setting is the
+  same ordered list as before, so existing configurations load unchanged.
+* **Strict order option:** "Always use the highest provider that has lyrics" makes the list position decide before
+  sync quality, so plain lyrics from your first provider beat word-synced lyrics from a lower one. Off by default.
+
+### Bug Fixes
+
+* Results of equal rank now go to the provider higher in your list; before, a tie between providers other than the
+  first went to whichever answered first.
+
+### Notes
+
+* An existing install that never changed the provider settings follows the new default
+  (`lrclib,unison,betterlyrics`) and starts sending lookups to `api.betterlyrics.org`. Untick **Better Lyrics** on
+  the Lyrics settings page to opt out. Installs with a saved provider list keep exactly that list.
+* Lyrics already in the cache are not re-ranked when you change the order; clear the cache to re-rank them.
+* New settings strings are not translated yet.
+
+## [1.0.0](https://github.com/Umar-Haqimi/Lirik/releases/tag/1.0.0) (2026-11-11)
 
 First release of Lirik, a fork of [PlasMusic Toolbar](https://github.com/ccatterina/plasmusic-toolbar) 4.3.1 that
 adds time-synced lyrics. With lyrics switched off it behaves like upstream and installs alongside it under its own
