@@ -12,8 +12,8 @@ import "../../code/constants.mjs" as C
 // Pure properties: must NOT reference `plasmoid`, `player` or `widget`; LyricsPanel binds everything in.
 //
 // Credits come from the provider mappers (our constants plus encodeURIComponent'd ids), but every URL is
-// validated again before it is opened: only https://lrclib.net and https://unison.betterlyrics.org (host
-// exact, nothing else) are ever handed to `opener`, never a URL taken from a payload (SPEC §6). Credit names
+// validated again before it is opened: only https://lrclib.net, https://unison.betterlyrics.org and the Better Lyrics credit
+// link https://better-lyrics.boidu.dev (host exact, nothing else) are ever handed to `opener`, never a URL taken from a payload (SPEC §6). Credit names
 // are drawn as plain text items (the submitter's display name is provider text, trap 14), never as rich text.
 Item {
     id: root
@@ -94,7 +94,7 @@ Item {
     function isSafeUrl(url: var): bool {
         if (typeof url !== "string" || url.length > 2048) return false
         if (/[\s\\\u0000-\u001f]/.test(url)) return false
-        const bases = [C.LRCLIB_BASE, C.UNISON_BASE]
+        const bases = [C.LRCLIB_BASE, C.UNISON_BASE, C.BETTERLYRICS_SITE]
         for (let i = 0; i < bases.length; i++) {
             const b = bases[i]
             if (url === b) return true

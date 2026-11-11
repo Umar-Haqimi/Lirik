@@ -22,7 +22,7 @@ QtObject {
 
     // --- inputs: config (bound to plasmoid.configuration) ---
     property bool enabled: true
-    property string providers: "lrclib,unison"
+    property string providers: "lrclib,unison,betterlyrics"
     property int minTrackS: C.MIN_TRACK_S
     property int maxTrackS: C.MAX_TRACK_S
     property string excludedPlayers: ""
@@ -53,7 +53,7 @@ QtObject {
     /// Same value as errorCode (kept for the views written against the old name); never translated here.
     property string errorText: ""
     /// Provider and HTTP status for tooltips; plain text, may contain provider text.
-    /// Provider id ("lrclib" | "unison") and HTTP status (0 when none) of the failure, for translated copy in the views.
+    /// Provider id (one of PROVIDER_NAMES) and HTTP status (0 when none) of the failure, for translated copy in the views.
     property string errorProvider: ""
     property int errorStatus: 0
     property string errorDetail: ""

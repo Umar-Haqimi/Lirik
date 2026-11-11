@@ -193,7 +193,7 @@
             <default>true</default>
         </entry>
         <entry name="lyricsProviders" type="String">
-            <default>lrclib,unison</default>
+            <default>lrclib,unison,betterlyrics</default>
         </entry>
         <entry name="lyricsGlobalOffsetMs" type="Int">
             <default>0</default>

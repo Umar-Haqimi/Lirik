@@ -6,6 +6,7 @@ import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.private.mpris as Mpris
 import "./lyrics"
+import "../code/constants.mjs" as C
 
 
 PlasmoidItem {
@@ -39,7 +40,7 @@ PlasmoidItem {
     // Depends on the lookup status, not on the line-by-line frame, so the tooltip does not churn while singing.
     readonly property string lyricsTooltipLine: {
         if (!lyricsSurfaceCompact || !lyricsController.source) return ""
-        const provider = lyricsController.source.provider === "unison" ? "Unison" : lyricsController.source.provider === "lrclib" ? "LRCLIB" : ""
+        const provider = C.providerLabel(String(lyricsController.source.provider))
         if (provider === "") return ""
         if (lyricsController.status === "synced") {
             return lyricsController.syncKind === "word" ? i18n("Lyrics: %1 (word-synced)", provider) : i18n("Lyrics: %1 (line-synced)", provider)

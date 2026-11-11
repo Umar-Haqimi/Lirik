@@ -39,7 +39,7 @@ KCM.SimpleKCM {
 
     // "Defaults" button support (Plasma sets cfg_<key>Default when a page declares it).
     property bool cfg_lyricsEnabledDefault: true
-    property string cfg_lyricsProvidersDefault: "lrclib,unison"
+    property string cfg_lyricsProvidersDefault: "lrclib,unison,betterlyrics"
     property int cfg_lyricsGlobalOffsetMsDefault: 0
     property bool cfg_lyricsInPanelDefault: true
     property bool cfg_lyricsKaraokeInPanelDefault: true
@@ -57,24 +57,54 @@ KCM.SimpleKCM {
 
     readonly property bool lyricsOn: lyricsEnabled.checked
 
-    // --- providers: the config value is an ordered comma list ("lrclib,unison"); a missing name = disabled ---
+    // --- providers: the config value is an ordered comma list ("lrclib,unison,betterlyrics"); a missing name =
+    // disabled. The first name is the one asked first ("Ask first"); only that position changes ranking. ---
     property bool _syncingProviders: false
+    /// The provider asked first; always one of the enabled ones (or "" when none is enabled).
+    property string _preferred: ""
+    /// Canonical order = the order of the checkboxes below; also the order of the rest of the saved list.
+    readonly property var _providerIds: ["lrclib", "unison", "betterlyrics", "kugou", "qq"]
+    readonly property var _providerChecks: [lrclibCheck, unisonCheck, betterLyricsCheck, kugouCheck, qqCheck]
+    readonly property var _providerNames: [i18n("LRCLIB"), i18n("Unison"), i18n("Better Lyrics"), i18n("Kugou (Better Lyrics)"), i18n("QQ (Better Lyrics)")]
+
+    function _enabledProviders(): var {
+        const out = []
+        for (let i = 0; i < _providerIds.length; i++) if (_providerChecks[i].checked) out.push(_providerIds[i])
+        return out
+    }
+
+    /// Rebuild the "Ask first" list from the enabled providers and select `_preferred`.
+    function _refreshPreferred(): void {
+        const enabled = _enabledProviders()
+        if (enabled.indexOf(_preferred) < 0) _preferred = enabled.length ? enabled[0] : ""
+        const model = []
+        for (let i = 0; i < enabled.length; i++) model.push({ value: enabled[i], text: _providerNames[_providerIds.indexOf(enabled[i])] })
+        askFirst.model = model
+        askFirst.currentIndex = enabled.indexOf(_preferred)
+    }
 
     function _parseProviders(): void {
         _syncingProviders = true
         const list = String(cfg_lyricsProviders === undefined ? "" : cfg_lyricsProviders).split(",").map(x => x.trim().toLowerCase()).filter(x => x)
-        const l = list.indexOf("lrclib")
-        const u = list.indexOf("unison")
-        lrclibCheck.checked = l >= 0
-        unisonCheck.checked = u >= 0
-        preferUnison.checked = u >= 0 && l >= 0 && u < l
+        for (let i = 0; i < _providerIds.length; i++) _providerChecks[i].checked = list.indexOf(_providerIds[i]) >= 0
+        _preferred = ""
+        for (let i = 0; i < list.length; i++) {
+            if (_providerIds.indexOf(list[i]) >= 0) {
+                _preferred = list[i]
+                break
+            }
+        }
+        _refreshPreferred()
         _syncingProviders = false
     }
 
     function _composeProviders(): void {
         if (_syncingProviders) return
-        const order = preferUnison.checked ? ["unison", "lrclib"] : ["lrclib", "unison"]
-        cfg_lyricsProviders = order.filter(n => n === "lrclib" ? lrclibCheck.checked : unisonCheck.checked).join(",")
+        _refreshPreferred()
+        const enabled = _enabledProviders()
+        const order = _preferred === "" ? [] : [_preferred]
+        for (let i = 0; i < enabled.length; i++) if (enabled[i] !== _preferred) order.push(enabled[i])
+        cfg_lyricsProviders = order.join(",")
     }
 
     onCfg_lyricsProvidersChanged: _parseProviders()
@@ -133,6 +163,7 @@ KCM.SimpleKCM {
 
         CheckBox {
             id: lrclibCheck
+            objectName: "check_lrclib"
             enabled: lyricsConfigPage.lyricsOn
             Kirigami.FormData.label: i18n("Providers:")
             text: i18n("LRCLIB")
@@ -141,21 +172,51 @@ KCM.SimpleKCM {
 
         CheckBox {
             id: unisonCheck
+            objectName: "check_unison"
             enabled: lyricsConfigPage.lyricsOn
             text: i18n("Unison")
             onToggled: lyricsConfigPage._composeProviders()
         }
 
         CheckBox {
-            id: preferUnison
-            enabled: lyricsConfigPage.lyricsOn && lrclibCheck.checked && unisonCheck.checked
-            Kirigami.FormData.label: i18n("Order:")
-            text: i18n("Ask Unison first")
+            id: betterLyricsCheck
+            objectName: "check_betterlyrics"
+            enabled: lyricsConfigPage.lyricsOn
+            text: i18n("Better Lyrics")
             onToggled: lyricsConfigPage._composeProviders()
         }
 
+        CheckBox {
+            id: kugouCheck
+            objectName: "check_kugou"
+            enabled: lyricsConfigPage.lyricsOn
+            text: i18n("Kugou (Better Lyrics)")
+            onToggled: lyricsConfigPage._composeProviders()
+        }
+
+        CheckBox {
+            id: qqCheck
+            objectName: "check_qq"
+            enabled: lyricsConfigPage.lyricsOn
+            text: i18n("QQ (Better Lyrics)")
+            onToggled: lyricsConfigPage._composeProviders()
+        }
+
+        ComboBox {
+            id: askFirst
+            objectName: "askFirst"
+            enabled: lyricsConfigPage.lyricsOn && lyricsConfigPage._enabledProviders().length > 1
+            Kirigami.FormData.label: i18n("Ask first:")
+            textRole: "text"
+            valueRole: "value"
+            onActivated: index => {
+                lyricsConfigPage._preferred = String(model[index].value)
+                lyricsConfigPage._composeProviders()
+            }
+        }
+
         Label {
-            visible: lyricsConfigPage.lyricsOn && !lrclibCheck.checked && !unisonCheck.checked
+            visible: lyricsConfigPage.lyricsOn && lyricsConfigPage._enabledProviders().length === 0
             Layout.maximumWidth: 20 * Kirigami.Units.gridUnit
             wrapMode: Text.Wrap
             text: i18n("No provider is selected, so no lyrics will be looked up.")

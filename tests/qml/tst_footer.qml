@@ -80,13 +80,27 @@ TestCase {
         compare(opened, ["https://unison.betterlyrics.org/song/abc", "https://unison.betterlyrics.org/curator/k1"])
     }
 
+    function test_better_lyrics_credit_link() {
+        footer.credits = [{ text: "Kugou (Better Lyrics)", url: "https://better-lyrics.boidu.dev" }]
+        const l = labels()
+        compare(l.length, 1)
+        compare(l[0].text, "Kugou (Better Lyrics)")
+        compare(l[0].textFormat, Text.PlainText)
+        mouseClick(l[0])
+        compare(opened, ["https://better-lyrics.boidu.dev"])
+    }
+
     function test_url_validation() {
         const bad = ["http://lrclib.net", "https://lrclib.net.evil.com", "https://evil.com/https://lrclib.net",
                      "https://lrclib.net@evil.com", "https://lrclib.net:8080/x", "https://unison.betterlyrics.org.evil.com/",
+                     "https://better-lyrics.boidu.dev.evil.com", "https://better-lyrics.boidu.dev@evil.com", "http://better-lyrics.boidu.dev",
+                     "https://api.betterlyrics.org/getLyrics?s=x", "https://betterlyrics.org",
                      "file:///etc/passwd", "javascript:alert(1)", "https://lrclib.net/a b", "https://lrclib.net\\evil", "", null, 5]
         for (let i = 0; i < bad.length; i++) compare(footer.isSafeUrl(bad[i]), false, String(bad[i]))
         compare(footer.isSafeUrl("https://lrclib.net"), true)
         compare(footer.isSafeUrl("https://lrclib.net/x"), true)
+        compare(footer.isSafeUrl("https://better-lyrics.boidu.dev"), true)
+        compare(footer.isSafeUrl("https://better-lyrics.boidu.dev/"), true)
         compare(footer.isSafeUrl("https://unison.betterlyrics.org/song/a%20b"), true)
         // a foreign URL in the credits is shown as plain text and never opened
         footer.credits = [{ text: "Evil", url: "https://evil.example/x" }]

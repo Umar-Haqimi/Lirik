@@ -5,7 +5,8 @@ import "../../code/constants.mjs" as C
 // XMLHttpRequest adapter for the resolver's `http` dependency (SPEC §6, docs/DECISIONS.md D4).
 //   request({ url, headers }, cb) -> { abort() }
 //   cb(err | null, { status, headers (lowercase keys), body })
-// - Host allow-list: https://lrclib.net and https://unison.betterlyrics.org only. While `devBaseUrl`
+// - Host allow-list (C.ALLOWED_HOSTS): https://lrclib.net, https://unison.betterlyrics.org and
+//   https://api.betterlyrics.org only. While `devBaseUrl`
 //   is set, also exactly that http://127.0.0.1:<port> origin. A refused URL calls back with an error
 //   asynchronously and never creates an XHR.
 // - Timeout (Timer + abort; XHR has no timeout property in QML), body cap in UTF-8 bytes.

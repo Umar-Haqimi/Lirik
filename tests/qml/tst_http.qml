@@ -29,14 +29,20 @@ TestCase {
             "https://lrclib.net/api/get/1",
             "https://lrclib.net",
             "https://LRCLIB.net/api",
-            "https://unison.betterlyrics.org/lyrics?song=x"
+            "https://unison.betterlyrics.org/lyrics?song=x",
+            "https://api.betterlyrics.org/getLyrics?s=x&a=y",
+            "https://api.betterlyrics.org/kugou/getLyrics?s=x",
+            "https://API.betterlyrics.org/qq/getLyrics?s=x"
         ]
         const bad = [
             "", "http://lrclib.net/api/get", "https://evil.example/api", "https://lrclib.net.evil.example/api",
             "https://evil.example/https://lrclib.net/", "https://lrclib.net@evil.example/api", "https://lrclib.net:8443/api",
             "https://evil.example#@lrclib.net/", "ftp://lrclib.net/x", "file:///etc/passwd", "//lrclib.net/api",
             "https://lrclib.net\\@evil.example/", "https://lrclib.net/a b", "http://127.0.0.1:47800/api/get",
-            "https://127.0.0.1/api", "https://sub.lrclib.net/api", "https://lrclib.network/api"
+            "https://127.0.0.1/api", "https://sub.lrclib.net/api", "https://lrclib.network/api",
+            "https://betterlyrics.org/getLyrics", "https://api.betterlyrics.org.evil.example/getLyrics",
+            "https://api.betterlyrics.org@evil.example/getLyrics", "https://api.betterlyrics.org:8443/getLyrics",
+            "http://api.betterlyrics.org/getLyrics", "https://better-lyrics.boidu.dev/", "https://www.betterlyrics.org/"
         ]
         for (let i = 0; i < ok.length; i++) verify(h.isAllowed(ok[i]), "should allow " + ok[i])
         for (let i = 0; i < bad.length; i++) verify(!h.isAllowed(bad[i]), "should refuse " + bad[i])

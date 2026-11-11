@@ -30,6 +30,14 @@ TestCase {
         }
     }
 
+    Component {
+        id: ctlBlComp
+        LyricsController {
+            devBaseUrl: tc.base
+            providers: "kugou"
+        }
+    }
+
     function post(body) {
         const x = new XMLHttpRequest()
         let finished = false
@@ -174,6 +182,31 @@ TestCase {
         c.hasMedia = false
         c.trackTitle = "Missing Placeholder"
         c.trackLengthUs = 150e6
+        c.hasMedia = true
+        tryCompare(c, "status", "notfound", 8000)
+    }
+
+    function test_controller_better_lyrics_endpoint() {
+        if (!up) skip("stub server not running")
+        const c = createTemporaryObject(ctlBlComp, tc, { cacheDbName: "lirik-test-stub-bl-" + Math.floor(Math.random() * 1e9) })
+        c.clearCache()
+        c.trackTitle = "Gapped Placeholder"
+        c.trackArtist = "Example Artist"
+        c.trackAlbum = "Placeholder Album"
+        c.trackLengthUs = 180e6
+        c.hasMedia = true
+        tryCompare(c, "status", "synced", 8000)
+        compare(c.syncKind, "line")
+        compare(c.source.provider, "kugou")
+        compare(c.credits[0].text, "Kugou (Better Lyrics)")
+        compare(c.credits[0].url, "https://better-lyrics.boidu.dev")
+        c.providers = "qq"
+        tryCompare(c, "syncKind", "word", 8000)
+        compare(c.source.provider, "qq")
+        // a song the endpoint has nothing for is "not found" (the real API answers 401 for an uncached song)
+        c.hasMedia = false
+        c.trackTitle = "Plain Placeholder"
+        c.trackLengthUs = 200e6
         c.hasMedia = true
         tryCompare(c, "status", "notfound", 8000)
     }

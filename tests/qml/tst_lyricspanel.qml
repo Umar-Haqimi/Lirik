@@ -296,6 +296,13 @@ TestCase {
         panel.errorProvider = "unison"
         panel.errorDetail = ""
         compare(child("errorTip").text, "Could not connect to Unison")
+        panel.errorProvider = "kugou"
+        compare(child("errorTip").text, "Could not connect to Kugou (Better Lyrics)")
+        panel.errorProvider = "betterlyrics"
+        compare(child("errorTip").text, "Could not connect to Better Lyrics")
+        panel.errorProvider = "constructor"
+        compare(child("errorTip").text, "Could not connect to constructor")
+        panel.errorProvider = "unison"
         // provider words never become rich text (an <img> in the detail would be fetched)
         panel.errorDetail = "lrclib: <img src=http://127.0.0.1:9/x>"
         compare(child("errorTip").textFormat, Text.PlainText)

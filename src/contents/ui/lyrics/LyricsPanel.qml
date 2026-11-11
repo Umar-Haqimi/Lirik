@@ -96,8 +96,8 @@ Item {
     readonly property string errorTipText: {
         const code = root.errorCode !== "" ? root.errorCode : root.errorText
         if (code === "" && root.errorDetail === "") return ""
-        const p = root.errorProvider === "lrclib" ? "LRCLIB" : (root.errorProvider === "unison" ? "Unison"
-            : (root.errorProvider !== "" ? root.errorProvider : i18nc("@info generic provider name", "the lyrics provider")))
+        const p = C.providerLabel(root.errorProvider) !== "" ? C.providerLabel(root.errorProvider)
+            : (root.errorProvider !== "" ? root.errorProvider : i18nc("@info generic provider name", "the lyrics provider"))
         let copy
         switch (code) {
         case "timeout": copy = i18nc("@info tooltip; %1 is a lyrics provider", "%1 did not answer in time", p); break
