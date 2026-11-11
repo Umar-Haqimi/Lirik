@@ -1417,3 +1417,63 @@ cases.push({ name: "betterlyrics: a pin to an unknown provider is ignored (no re
     assert.equal(env.reqs.length, n + 1, "only the normal lookup")
     assert.equal(env.cache.prefs[s.trackKey].pinnedId, "1")
 } })
+
+// --- provider priority (D25) -------------------------------------------------------
+cases.push({ name: "priority: a tie in rank goes to the provider higher in the list, not the faster one", fn: () => {
+    // lrclib answers first, kugou later; both line-synced by signature. "unison" first so no provider gets the first-place bonus.
+    const mk = function () { return { "lrclib.get": fxr("lrclib-get-line"), "kugou.lookup": fxr("betterlyrics-kugou-lrc", { delay: 300 }) } }
+    const a = world(mk(), { providers: ["unison", "kugou", "lrclib"] })
+    const sa = lookup(a, TRACK)
+    assert.equal(a.cache.rows[sa.trackKey].provider, "kugou")
+    const b = world(mk(), { providers: ["unison", "lrclib", "kugou"] })
+    const sb = lookup(b, TRACK)
+    assert.equal(b.cache.rows[sb.trackKey].provider, "lrclib")
+} })
+cases.push({ name: "priority: without strict order a better-synced result from a lower provider still wins", fn: () => {
+    const env = world({
+        "lrclib.get": fxr("lrclib-get-line", { delay: 20 }),
+        "unison.lookup": fxr("unison-id-plain-plain", { delay: 100 }),
+    }, { providers: ["unison", "lrclib"] })
+    const s = lookup(env, TRACK)
+    assert.equal(s.source.provider, "lrclib")
+    assert.equal(env.cache.rows[s.trackKey].provider, "lrclib")
+} })
+cases.push({ name: "priority: strict order swaps to a higher provider inside the window even with a lower tier", fn: () => {
+    const env = world({
+        "lrclib.get": fxr("lrclib-get-line", { delay: 20 }),
+        "unison.lookup": fxr("unison-id-plain-plain", { delay: 100 }),
+    }, { providers: ["unison", "lrclib"], strictOrder: true })
+    const s = lookup(env, TRACK)
+    assert.equal(s.source.provider, "unison")
+    assert.equal(s.lyrics.sync, "none")
+    assert.equal(env.cache.rows[s.trackKey].provider, "unison")
+    assert.equal(s.alternates[0].provider, "lrclib")
+} })
+cases.push({ name: "priority: strict order never swaps to a LOWER provider, whatever its tier", fn: () => {
+    const env = world({
+        "lrclib.get": fxr("lrclib-get-line", { delay: 20 }),
+        "unison.lookup": fxr("unison-lyrics-v", { delay: 100 }),
+    }, { providers: ["lrclib", "unison"], strictOrder: true })
+    const s = lookup(env, TRACK)
+    assert.equal(s.source.provider, "lrclib")
+    assert.equal(env.cache.rows[s.trackKey].provider, "lrclib", "word sync from #2 loses to line sync from #1")
+} })
+cases.push({ name: "priority: strict order, a higher provider after the window does not swap mid-song but is cached", fn: () => {
+    const env = world({
+        "lrclib.get": fxr("lrclib-get-line", { delay: 20 }),
+        "unison.lookup": fxr("unison-id-plain-plain", { delay: 3000 }),
+    }, { providers: ["unison", "lrclib"], strictOrder: true })
+    env.resolver.setTrack(TRACK)
+    env.advance(DEBOUNCE_MS + 3500)
+    const s = env.resolver.state()
+    assert.equal(s.source.provider, "lrclib")
+    assert.equal(env.cache.rows[s.trackKey].provider, "unison")
+} })
+cases.push({ name: "priority: strictOrder is part of the config (changing it starts a new lookup) and only true enables it", fn: () => {
+    const env = world({ "lrclib.get": fxr("lrclib-get-line", { delay: 20 }), "unison.lookup": fxr("unison-id-plain-plain", { delay: 100 }) }, { providers: ["unison", "lrclib"] })
+    const s = lookup(env, TRACK)
+    assert.equal(s.source.provider, "lrclib")
+    env.resolver.setConfig({ strictOrder: "yes" })
+    env.advance(DEBOUNCE_MS + 5000)
+    assert.equal(env.resolver.state().source.provider, "lrclib", "a non-boolean is not strict")
+} })

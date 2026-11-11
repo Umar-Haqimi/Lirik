@@ -537,10 +537,42 @@ Added after v1.0.0. SPEC §2.1i has the API facts; the choices:
   from constants only. That host is in `LyricsFooter.isSafeUrl` but **not** in `ALLOWED_HOSTS`: it is opened in the
   browser, never requested. `api.betterlyrics.org` is in `ALLOWED_HOSTS`.
 - **Config page.** Five checkboxes plus an "Ask first" combo box replace "Ask Unison first". The saved value is still an
-  ordered comma list: `[preferred, ...other enabled in canonical order]`; only the first position changes ranking
-  (`RANK_PROVIDER_FIRST`), as before. Old values (`unison,lrclib`) parse unchanged.
+  ordered comma list; old values (`unison,lrclib`) parse unchanged. (The checkboxes and the combo box became one
+  draggable list in D25.)
 - **Tests.** Live samples were probed with `tools/probe-apis.mjs --only betterlyrics` and scrubbed by `tools/scrub.mjs`
   (QRC words scrubbed inside the wrapper attribute); the 404/429/503 fixtures are hand-written from the docs and say so.
   The existing resolver cases are pinned to `["lrclib","unison"]` in their harness so they keep testing what they were
   written for; the new cases pass `providers` explicitly. `tests/qml/tst_configpage.qml` builds the real config page, so it
   runs against real Plasma modules only (skipped when the stubs are in use).
+
+## D25. Provider priority list (drag and drop) and strict order
+
+The "Ask first" box only moved one provider to the front, and only that position counted (`RANK_PROVIDER_FIRST`, 5
+points). The settings page now has one list: each row is a provider with a checkbox, and the user drags the rows (or
+presses Alt+Up / Alt+Down on a focused row) to set the priority, top first.
+
+- **Same saved value.** `lyricsProviders` is still the comma list of the *enabled* providers, now in full priority
+  order. Old values parse unchanged. A new Bool `lyricsProviderOrderStrict` (default `false`) picks the mode.
+- **Two modes, one comparator.** `match.mjs` `compareRanked(x, y, order, strict)` sorts the results in `finalize`:
+  - *Default (off):* `rank()` is untouched, so sync quality still decides first (word > line > plain), and the
+    position in the list breaks ties. Before, a tie between two providers that were not first went to whichever
+    answered first. A saved setting from before behaves exactly as it did, apart from those ties.
+  - *Strict (on):* the position in the list decides first; `rank()` only orders results of the same provider. So plain
+    text from #1 beats word-synced lyrics from #3. An instrumental result from a higher provider also wins.
+- **Live display.** `considerDisplay` keeps the `SWAP_WINDOW_MS` rule. Default: swap only to a strictly higher tier
+  (unchanged). Strict: swap to a result from a provider higher in the list, whatever its tier, and never to a lower
+  one. A higher provider that answers after the window is cached as the winner but does not replace the lyrics
+  mid-song, the same as a late higher tier today.
+- **Cached rows are not re-ranked** when the order or the mode changes, the same as before for "Ask first": a found
+  row stays until its TTL ends or the cache is cleared. The page hint says so. Changing the config does start a new
+  lookup (`setConfig` already did), which reads the cache first.
+- **The list keeps the disabled rows.** Unticking a row keeps its place, so reticking it returns it to where the user
+  put it; only enabled rows are saved. When a saved value is re-read, the rows are rebuilt only if it differs from what
+  the rows already say (echo guard), otherwise setting `cfg_lyricsProviders` from the page would rebuild the model in
+  the middle of a drag.
+- **Kirigami.ListItemDragHandle gotchas.** (1) The delegate must be two items: an outer `slot` that stays in the list
+  and an inner item that is the drag target. If the delegate itself is dragged, `ListView.indexAt()` keeps finding it
+  under the pointer and no move is requested. (2) The handle reads the delegate's context `index`, so the delegate
+  must not declare `required property` (Qt then stops providing it). (3) `Kirigami.FormLayout` sized the list from
+  `Layout.preferred*` as 0 px high, which gives the handle a negative drag range; the list sets `implicitHeight`.
+  `tests/qml/tst_configpage.qml` drags a handle with the real mouse path to cover all three.

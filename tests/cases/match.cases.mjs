@@ -1,7 +1,7 @@
 import { assert } from "./assert.mjs"
 import {
     normalizeText, similarity, levenshtein, splitArtists, artistOverlap, stripTitleDecorations,
-    durationScore, durationRejects, acceptCandidate, rank, tierValue,
+    durationScore, durationRejects, acceptCandidate, rank, tierValue, providerIndex, compareRanked,
 } from "../../src/contents/code/match.mjs"
 import { clean } from "../../src/contents/code/trackinfo.mjs"
 
@@ -164,6 +164,34 @@ export const cases = [
         assert.ok(rank({ provider: "lrclib", lyrics: instr, matchedBy: "id" }, order) < rank({ provider: "unison", lyrics: line, matchedBy: "search", similarity: 0 }, order))
         // provider order changes the 5-point bonus
         assert.equal(rank({ provider: "unison", lyrics: line, matchedBy: "id" }, ["unison", "lrclib"]), 200 + 30 + 5)
+    } },
+    { name: "providerIndex and compareRanked (D25): tie-breaker by default, strict order on request", fn: () => {
+        const word = { sync: "word", lines: [{}], plain: "", instrumental: false }
+        const plain = { sync: "none", lines: [], plain: "la", instrumental: false }
+        const order = ["lrclib", "unison", "betterlyrics"]
+        assert.equal(providerIndex("unison", order), 1)
+        assert.equal(providerIndex("kugou", order), 3, "unlisted sorts last")
+        assert.equal(providerIndex("kugou", null), 0)
+        const mk = function (provider, lyrics) { const r = { provider, lyrics, matchedBy: "signature" }; return { r, rank: rank(r, ["x"]) } }
+        const plain1 = mk("lrclib", plain)
+        const word3 = mk("betterlyrics", word)
+        // default: sync quality first
+        assert.ok(compareRanked(word3, plain1, order, false) < 0)
+        // strict: the higher provider first, whatever the tier
+        assert.ok(compareRanked(plain1, word3, order, true) < 0)
+        assert.ok(compareRanked(word3, plain1, order, true) > 0)
+        // equal rank: the provider higher in the list wins, in both modes
+        const a = mk("unison", plain)
+        const b = mk("betterlyrics", plain)
+        assert.ok(compareRanked(a, b, order, false) < 0)
+        assert.ok(compareRanked(b, a, order, false) > 0)
+        assert.ok(compareRanked(a, b, order, true) < 0)
+        // same provider in strict mode: rank decides
+        const hi = mk("unison", word)
+        assert.ok(compareRanked(hi, a, order, true) < 0)
+        assert.equal(compareRanked(a, mk("unison", plain), order, false), 0)
+        // unlisted provider sorts after every listed one
+        assert.ok(compareRanked(mk("kugou", plain), a, order, false) > 0)
     } },
 ]
 

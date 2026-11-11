@@ -24,7 +24,7 @@ import {
 } from "./constants.mjs"
 import { stableSort, clamp } from "./model.mjs"
 import { clean, skipReason } from "./trackinfo.mjs"
-import { acceptCandidate, rank, tierValue, durationRejects } from "./match.mjs"
+import { acceptCandidate, rank, tierValue, durationRejects, providerIndex, compareRanked } from "./match.mjs"
 import {
     buildGet as lrBuildGet, buildGetById as lrBuildById, buildSearch as lrBuildSearch,
     buildSearchV1 as lrBuildSearchV1, mapGet as lrMapGet, mapSearch as lrMapSearch, mapRecord as lrMapRecord,
@@ -63,6 +63,7 @@ function normalizeConfig(c) {
     return {
         enabled: c.enabled !== false,
         providers: parseProviders(c.providers === undefined ? DEFAULT_PROVIDERS : c.providers),
+        strictOrder: c.strictOrder === true,
         minTrackS: typeof c.minTrackS === "number" ? c.minTrackS : MIN_TRACK_S,
         maxTrackS: typeof c.maxTrackS === "number" ? c.maxTrackS : MAX_TRACK_S,
         excludedPlayers: parseList(c.excludedPlayers),
@@ -503,8 +504,14 @@ export function createResolver(deps) {
             }
             return
         }
-        // Swap only to a strictly higher tier, and only shortly after the first display.
-        if (tierValue(res) > lk.shownTier && now() - lk.shownAt <= SWAP_WINDOW_MS) show(lk, res)
+        // Swap only shortly after the first display: to a strictly higher tier, or in strict order (D25) to a
+        // provider higher in the priority list, whatever its tier.
+        if (now() - lk.shownAt > SWAP_WINDOW_MS) return
+        if (cfg.strictOrder) {
+            if (providerIndex(res.provider, cfg.providers) < providerIndex(lk.shown.provider, cfg.providers)) show(lk, res)
+        } else if (tierValue(res) > lk.shownTier) {
+            show(lk, res)
+        }
     }
 
     function finish(lk, name, outcome) {
@@ -556,7 +563,7 @@ export function createResolver(deps) {
         if (lk.results.length > 0) {
             const ranked = []
             for (let i = 0; i < lk.results.length; i++) ranked.push({ r: lk.results[i], rank: rank(lk.results[i], providerOrder) })
-            const sorted = stableSort(ranked, function (x, y) { return y.rank - x.rank })
+            const sorted = stableSort(ranked, function (x, y) { return compareRanked(x, y, providerOrder, cfg.strictOrder) })
             const winner = sorted[0].r
             // Every known version, best first; the cache keeps all but the winner, the UI all but the shown one.
             const pool = []
@@ -769,7 +776,7 @@ export function createResolver(deps) {
 
     // --- public API ---------------------------------------------------------------
 
-    /** Configure: { enabled, providers: ["lrclib","unison","betterlyrics"] | "lrclib,unison,betterlyrics" (any of PROVIDER_NAMES), minTrackS, maxTrackS, excludedPlayers, cacheEnabled, devBaseUrl }. */
+    /** Configure: { enabled, providers: ["lrclib","unison","betterlyrics"] | "lrclib,unison,betterlyrics" (any of PROVIDER_NAMES; the order is the priority), strictOrder (bool, D25), minTrackS, maxTrackS, excludedPlayers, cacheEnabled, devBaseUrl }. */
     function setConfig(c) {
         if (disposed) return
         const merged = normalizeConfig(Object.assign({}, cfg, c || {}))

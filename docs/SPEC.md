@@ -314,7 +314,7 @@ Credit text: LRCLIB → "Lyrics from LRCLIB" linking `https://lrclib.net`. Uniso
 
 ### 4.3 Config page "Lyrics"
 
-A fourth `ConfigCategory` built like upstream's pages (`KCM.SimpleKCM`, `Kirigami.FormLayout`, `cfg_` aliases). Sections: **Sources** (enable lyrics, one checkbox per provider (LRCLIB, Unison, Better Lyrics, Kugou (Better Lyrics), QQ (Better Lyrics)) and an "Ask first" box that picks the provider asked first (the saved list is ordered, first = asked first), global offset with a hint that delayed audio such as Bluetooth needs a positive value), **Panel**, **Full view**, **Filtering**, **Cache & privacy** (entry count, Clear cache, and the sentence "Track title, artist, album and duration are sent to the enabled providers.").
+A fourth `ConfigCategory` built like upstream's pages (`KCM.SimpleKCM`, `Kirigami.FormLayout`, `cfg_` aliases). Sections: **Sources** (enable lyrics, one draggable row per provider (LRCLIB, Unison, Better Lyrics, Kugou (Better Lyrics), QQ (Better Lyrics)) with a checkbox each; the order top to bottom is the priority (the saved list holds the enabled ones in that order; Alt+Up / Alt+Down move a focused row), plus an "Always use the highest provider that has lyrics" box (strict order, D25), global offset with a hint that delayed audio such as Bluetooth needs a positive value), **Panel**, **Full view**, **Filtering**, **Cache & privacy** (entry count, Clear cache, and the sentence "Track title, artist, album and duration are sent to the enabled providers.").
 
 **Localization:** every new string goes through `i18n()` / `i18nc()`. Run `bin/i18n extract` so `template.pot` stays current. No new translations in v1.
 
@@ -413,7 +413,7 @@ frame(lyrics, tMs, opts) → { state, active: number[], primary, upcoming,
    - **Unison:** one `GET /lyrics` with `v` (if known) + `song` + `artist` + `album` + `duration`.
    - **Better Lyrics API** (`betterlyrics`, `kugou`, `qq`): one `GET` each with `s` + `a` + `al` + `d` (§2.1i). `401` is a not-found; a `429` pauses all three.
 6. **Progressive display:** show the first acceptable result at once. If the other provider returns a strictly higher sync tier within 2500 ms, swap to it; otherwise never swap mid-song.
-7. **Rank:** tier (word 300, line 200, plain 100) + match (`id` 30, `signature` 20, `search` 10 × similarity) + provider order (first 5) + Unison confidence (high 3, medium 1). LRCLIB `instrumental: true` wins only when no provider returned synced lyrics.
+7. **Rank:** tier (word 300, line 200, plain 100) + match (`id` 30, `signature` 20, `search` 10 × similarity) + provider order (first 5) + Unison confidence (high 3, medium 1). LRCLIB `instrumental: true` wins only when no provider returned synced lyrics. Equal ranks go to the provider higher in the priority list (not the faster one). With the "strict order" setting the list comes first instead: the highest provider that found anything wins, rank only decides within one provider (docs/DECISIONS.md D25).
 8. **Search acceptance** (`match.mjs`): title similarity ≥ 0.85, artist overlap ≥ 0.6, and duration within 10 s when both are known (≤ 2 s scores 1.0, ≤ 5 s 0.7, ≤ 10 s 0.3).
 9. Cache the winner and up to 4 alternates as `(provider, id)`. `notfound` is cached for 6 h; errors are not cached. `429`/`503` put that provider in cooldown until `Retry-After` (+ jitter) and surface `ratelimited`.
 

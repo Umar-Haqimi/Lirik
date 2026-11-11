@@ -66,7 +66,7 @@ Widget settings → **Lyrics**:
 
 | Section | What you can set |
 | --- | --- |
-| Sources | Enable lyrics (master switch), one checkbox per provider (LRCLIB, Unison, Better Lyrics, Kugou, QQ), **Ask first** (which provider is asked first), a global timing offset (ms; positive for delayed audio such as Bluetooth) |
+| Sources | Enable lyrics (master switch), one row per provider (LRCLIB, Unison, Better Lyrics, Kugou, QQ) with a checkbox, **drag the rows to set the priority** (top first), and an option to always use the highest provider that has lyrics instead of letting better-synced lyrics win, a global timing offset (ms; positive for delayed audio such as Bluetooth) |
 | Panel | Lyrics in the panel, karaoke highlight, title during long pauses, gap length |
 | Full view | Side panel position (hidden, left, right) and width, karaoke highlight, text alignment, text size |
 | Filtering | Skip tracks shorter or longer than N seconds, players that never get lookups |

@@ -86,6 +86,7 @@ PlasmoidItem {
         lyricsEnabled: plasmoid.configuration.lyricsEnabled
         surfaceVisible: widget.lyricSurfaceVisible
         providers: plasmoid.configuration.lyricsProviders
+        providerOrderStrict: plasmoid.configuration.lyricsProviderOrderStrict
         minTrackS: plasmoid.configuration.lyricsMinTrackSec
         maxTrackS: plasmoid.configuration.lyricsMaxTrackSec
         excludedPlayers: plasmoid.configuration.lyricsExcludedPlayers

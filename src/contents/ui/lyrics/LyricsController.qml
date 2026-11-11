@@ -23,6 +23,7 @@ QtObject {
     // --- inputs: config (bound to plasmoid.configuration) ---
     property bool enabled: true
     property string providers: "lrclib,unison,betterlyrics"
+    property bool providerOrderStrict: false
     property int minTrackS: C.MIN_TRACK_S
     property int maxTrackS: C.MAX_TRACK_S
     property string excludedPlayers: ""
@@ -200,6 +201,7 @@ QtObject {
         root._resolver.setConfig({
             enabled: root.enabled,
             providers: root.providers,
+            strictOrder: root.providerOrderStrict,
             minTrackS: root.minTrackS,
             maxTrackS: root.maxTrackS,
             excludedPlayers: root.excludedPlayers,
@@ -230,6 +232,7 @@ QtObject {
 
     onEnabledChanged: _queueConfig()
     onProvidersChanged: _queueConfig()
+    onProviderOrderStrictChanged: _queueConfig()
     onMinTrackSChanged: _queueConfig()
     onMaxTrackSChanged: _queueConfig()
     onExcludedPlayersChanged: _queueConfig()

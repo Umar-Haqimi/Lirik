@@ -36,10 +36,12 @@ KCM.SimpleKCM {
     property alias cfg_lyricsMaxTrackSec: maxTrackSec.value
     property alias cfg_lyricsExcludedPlayers: excludedPlayers.text
     property alias cfg_lyricsCacheEnabled: lyricsCacheEnabled.checked
+    property alias cfg_lyricsProviderOrderStrict: strictOrder.checked
 
     // "Defaults" button support (Plasma sets cfg_<key>Default when a page declares it).
     property bool cfg_lyricsEnabledDefault: true
     property string cfg_lyricsProvidersDefault: "lrclib,unison,betterlyrics"
+    property bool cfg_lyricsProviderOrderStrictDefault: false
     property int cfg_lyricsGlobalOffsetMsDefault: 0
     property bool cfg_lyricsInPanelDefault: true
     property bool cfg_lyricsKaraokeInPanelDefault: true
@@ -57,54 +59,63 @@ KCM.SimpleKCM {
 
     readonly property bool lyricsOn: lyricsEnabled.checked
 
-    // --- providers: the config value is an ordered comma list ("lrclib,unison,betterlyrics"); a missing name =
-    // disabled. The first name is the one asked first ("Ask first"); only that position changes ranking. ---
+    // --- providers: the config value is an ordered comma list ("lrclib,unison,betterlyrics"): the order is the
+    // priority (top = first), a missing name = disabled. The list below keeps the disabled rows too, so a row
+    // keeps its place while it is unticked; only the enabled rows are saved (D25). ---
     property bool _syncingProviders: false
-    /// The provider asked first; always one of the enabled ones (or "" when none is enabled).
-    property string _preferred: ""
-    /// Canonical order = the order of the checkboxes below; also the order of the rest of the saved list.
+    /// Canonical order: the order of the disabled rows, and the order of a list that names none of them.
     readonly property var _providerIds: ["lrclib", "unison", "betterlyrics", "kugou", "qq"]
-    readonly property var _providerChecks: [lrclibCheck, unisonCheck, betterLyricsCheck, kugouCheck, qqCheck]
     readonly property var _providerNames: [i18n("LRCLIB"), i18n("Unison"), i18n("Better Lyrics"), i18n("Kugou (Better Lyrics)"), i18n("QQ (Better Lyrics)")]
 
+    /// Enabled provider ids in list order (= the saved value as an array).
     function _enabledProviders(): var {
         const out = []
-        for (let i = 0; i < _providerIds.length; i++) if (_providerChecks[i].checked) out.push(_providerIds[i])
+        for (let i = 0; i < providerModel.count; i++) if (providerModel.get(i).active) out.push(providerModel.get(i).pid)
         return out
     }
 
-    /// Rebuild the "Ask first" list from the enabled providers and select `_preferred`.
-    function _refreshPreferred(): void {
-        const enabled = _enabledProviders()
-        if (enabled.indexOf(_preferred) < 0) _preferred = enabled.length ? enabled[0] : ""
-        const model = []
-        for (let i = 0; i < enabled.length; i++) model.push({ value: enabled[i], text: _providerNames[_providerIds.indexOf(enabled[i])] })
-        askFirst.model = model
-        askFirst.currentIndex = enabled.indexOf(_preferred)
+    function _composeString(): string {
+        return _enabledProviders().join(",")
+    }
+
+    /// The known provider ids of a saved value: lowercased, unknown names and duplicates dropped, order kept.
+    function _savedList(): var {
+        const raw = String(cfg_lyricsProviders === undefined ? "" : cfg_lyricsProviders).split(",").map(x => x.trim().toLowerCase())
+        const out = []
+        for (let i = 0; i < raw.length; i++) if (_providerIds.indexOf(raw[i]) >= 0 && out.indexOf(raw[i]) < 0) out.push(raw[i])
+        return out
     }
 
     function _parseProviders(): void {
+        const list = _savedList()
+        // Echo of our own _composeProviders(): the rows already say this; rebuilding would move the disabled rows
+        // and destroy the delegate that is being dragged.
+        if (providerModel.count === _providerIds.length && list.join(",") === _composeString()) return
         _syncingProviders = true
-        const list = String(cfg_lyricsProviders === undefined ? "" : cfg_lyricsProviders).split(",").map(x => x.trim().toLowerCase()).filter(x => x)
-        for (let i = 0; i < _providerIds.length; i++) _providerChecks[i].checked = list.indexOf(_providerIds[i]) >= 0
-        _preferred = ""
-        for (let i = 0; i < list.length; i++) {
-            if (_providerIds.indexOf(list[i]) >= 0) {
-                _preferred = list[i]
-                break
-            }
+        providerModel.clear()
+        for (let i = 0; i < list.length; i++) providerModel.append({ pid: list[i], label: _providerNames[_providerIds.indexOf(list[i])], active: true })
+        for (let i = 0; i < _providerIds.length; i++) {
+            if (list.indexOf(_providerIds[i]) < 0) providerModel.append({ pid: _providerIds[i], label: _providerNames[i], active: false })
         }
-        _refreshPreferred()
         _syncingProviders = false
     }
 
     function _composeProviders(): void {
         if (_syncingProviders) return
-        _refreshPreferred()
-        const enabled = _enabledProviders()
-        const order = _preferred === "" ? [] : [_preferred]
-        for (let i = 0; i < enabled.length; i++) if (enabled[i] !== _preferred) order.push(enabled[i])
-        cfg_lyricsProviders = order.join(",")
+        cfg_lyricsProviders = _composeString()
+    }
+
+    /// Move a row (drag drop and Alt+Up / Alt+Down).
+    function moveProvider(from: int, to: int): void {
+        if (from < 0 || to < 0 || from >= providerModel.count || to >= providerModel.count || from === to) return
+        providerModel.move(from, to, 1)
+        _composeProviders()
+    }
+
+    function setProviderActive(index: int, on: bool): void {
+        if (index < 0 || index >= providerModel.count) return
+        providerModel.setProperty(index, "active", on)
+        _composeProviders()
     }
 
     onCfg_lyricsProvidersChanged: _parseProviders()
@@ -161,58 +172,89 @@ KCM.SimpleKCM {
             text: i18n("Enable lyrics")
         }
 
-        CheckBox {
-            id: lrclibCheck
-            objectName: "check_lrclib"
-            enabled: lyricsConfigPage.lyricsOn
+        ListView {
+            id: providerList
+            objectName: "providerList"
             Kirigami.FormData.label: i18n("Providers:")
-            text: i18n("LRCLIB")
-            onToggled: lyricsConfigPage._composeProviders()
-        }
-
-        CheckBox {
-            id: unisonCheck
-            objectName: "check_unison"
+            Kirigami.FormData.labelAlignment: Qt.AlignTop
+            // Kirigami.FormLayout sizes its children from implicitWidth/implicitHeight; with only Layout.preferred*
+            // the list stays 0 px high, which also leaves the drag handle no room to move (maximumY < 0).
+            implicitWidth: 16 * Kirigami.Units.gridUnit
+            implicitHeight: contentHeight
+            Layout.preferredWidth: implicitWidth
+            Layout.preferredHeight: implicitHeight
+            interactive: false
+            cacheBuffer: 1000 // all five rows exist even before the layout has sized the list
             enabled: lyricsConfigPage.lyricsOn
-            text: i18n("Unison")
-            onToggled: lyricsConfigPage._composeProviders()
-        }
+            model: ListModel { id: providerModel }
 
-        CheckBox {
-            id: betterLyricsCheck
-            objectName: "check_betterlyrics"
-            enabled: lyricsConfigPage.lyricsOn
-            text: i18n("Better Lyrics")
-            onToggled: lyricsConfigPage._composeProviders()
-        }
+            // Two items, as in Kirigami's ListItemDragHandle example: `slot` stays in the list as the placeholder while
+            // `providerRow` (the drag target) is reparented to the list and follows the pointer. Dragging the delegate
+            // itself makes ListView.indexAt() keep finding it under the pointer, so no move is ever requested.
+            // No `required property` here: the handle reads the delegate's context `index`, which Qt does not provide
+            // to a delegate that declares required properties.
+            delegate: Item {
+                id: slot
+                readonly property string pid: model.pid
+                readonly property string label: model.label
+                readonly property bool active: model.active
+                readonly property int row: index
+                width: providerList.width
+                height: providerRow.implicitHeight
 
-        CheckBox {
-            id: kugouCheck
-            objectName: "check_kugou"
-            enabled: lyricsConfigPage.lyricsOn
-            text: i18n("Kugou (Better Lyrics)")
-            onToggled: lyricsConfigPage._composeProviders()
-        }
+                Item {
+                    id: providerRow
+                    width: slot.width
+                    implicitHeight: rowLayout.implicitHeight
+                    height: implicitHeight
 
-        CheckBox {
-            id: qqCheck
-            objectName: "check_qq"
-            enabled: lyricsConfigPage.lyricsOn
-            text: i18n("QQ (Better Lyrics)")
-            onToggled: lyricsConfigPage._composeProviders()
-        }
+                    RowLayout {
+                        id: rowLayout
+                        width: parent.width
+                        spacing: Kirigami.Units.smallSpacing
 
-        ComboBox {
-            id: askFirst
-            objectName: "askFirst"
-            enabled: lyricsConfigPage.lyricsOn && lyricsConfigPage._enabledProviders().length > 1
-            Kirigami.FormData.label: i18n("Ask first:")
-            textRole: "text"
-            valueRole: "value"
-            onActivated: index => {
-                lyricsConfigPage._preferred = String(model[index].value)
-                lyricsConfigPage._composeProviders()
+                        Kirigami.ListItemDragHandle {
+                            objectName: "drag_" + slot.pid
+                            listItem: providerRow
+                            listView: providerList
+                            onMoveRequested: (oldIndex, newIndex) => providerModel.move(oldIndex, newIndex, 1)
+                            onDropped: lyricsConfigPage._composeProviders()
+                        }
+
+                        CheckBox {
+                            objectName: "check_" + slot.pid
+                            Layout.fillWidth: true
+                            text: slot.label
+                            checked: slot.active
+                            onToggled: lyricsConfigPage.setProviderActive(slot.row, checked)
+                            Keys.onPressed: event => {
+                                if (!(event.modifiers & Qt.AltModifier)) return
+                                if (event.key === Qt.Key_Up) {
+                                    lyricsConfigPage.moveProvider(slot.row, slot.row - 1)
+                                    event.accepted = true
+                                } else if (event.key === Qt.Key_Down) {
+                                    lyricsConfigPage.moveProvider(slot.row, slot.row + 1)
+                                    event.accepted = true
+                                }
+                            }
+                        }
+                    }
+                }
             }
+        }
+
+        CheckBox {
+            id: strictOrder
+            objectName: "strictOrder"
+            enabled: lyricsConfigPage.lyricsOn
+            text: i18n("Always use the highest provider that has lyrics")
+        }
+
+        Label {
+            Layout.maximumWidth: 20 * Kirigami.Units.gridUnit
+            wrapMode: Text.Wrap
+            opacity: 0.7
+            text: i18n("Drag to set the order, top first. When this is off, better-synced lyrics win and the order only breaks ties. Changes apply to new lookups; clear the cache to re-rank stored lyrics.")
         }
 
         Label {

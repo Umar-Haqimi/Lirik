@@ -332,3 +332,20 @@ export function rank(result, providerOrder) {
     if (result.durationUnknown) r -= RANK_UNKNOWN_DURATION_PENALTY
     return r
 }
+
+/** Position of a provider in the user's priority list; one past the end when it is not listed. */
+export function providerIndex(name, order) {
+    const i = order ? order.indexOf(name) : -1
+    return i < 0 ? (order ? order.length : 0) : i
+}
+
+/**
+ * Sort comparator for `{ r: result, rank }` items, best first (D25).
+ * Default: rank first, the provider higher in `order` breaks ties.
+ * Strict: the provider higher in `order` first, rank only decides between results of the same provider.
+ */
+export function compareRanked(x, y, order, strict) {
+    const dp = providerIndex(x.r.provider, order) - providerIndex(y.r.provider, order)
+    if (strict) return dp !== 0 ? dp : y.rank - x.rank
+    return y.rank !== x.rank ? y.rank - x.rank : dp
+}

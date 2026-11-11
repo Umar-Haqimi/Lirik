@@ -20,6 +20,7 @@ QtObject {
 
     // config (bound to plasmoid.configuration by the host)
     property string providers: "lrclib,unison,betterlyrics"
+    property bool providerOrderStrict: false
     property int minTrackS: 30
     property int maxTrackS: 900
     property string excludedPlayers: ""
@@ -49,6 +50,7 @@ QtObject {
         playerIdentity: root.player ? root.player.identity : ""
         enabled: root.lyricsEnabled
         providers: root.providers
+        providerOrderStrict: root.providerOrderStrict
         minTrackS: root.minTrackS
         maxTrackS: root.maxTrackS
         excludedPlayers: root.excludedPlayers
