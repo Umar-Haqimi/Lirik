@@ -85,7 +85,12 @@ function decodeDoubleEscape(s, i, out, lineNo) {
 function Parser(src, maxDepth) {
     let text = String(src)
     if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
-    this.lines = text.replace(/\r\n?/g, "\n").split("\n")
+    text = text.replace(/\r\n?/g, "\n")
+    this.noFinalNewline = text.length > 0 && text.charAt(text.length - 1) !== "\n"
+    this.lines = text.split("\n")
+    // The empty piece after the final line break is not a line (it would add a phantom blank line to a
+    // trailing `|+` / `>+` block scalar).
+    if (this.lines.length > 1 && this.lines[this.lines.length - 1] === "") this.lines.pop()
     this.maxDepth = maxDepth
     this.end = this.lines.length
 }
@@ -245,6 +250,11 @@ Parser.prototype.parseBlockScalar = function (li, header, n) {
         if (contentIndent < 0 || indentOf(L) < contentIndent) break
         raw.push(L.slice(contentIndent))
         i++
+    }
+    // A final whitespace-only line with no line break after it (and no longer than the indent) is not a line.
+    if (i >= this.end && this.noFinalNewline && raw.length > 0 && contentIndent > 0) {
+        const fl = this.lines[this.end - 1]
+        if (fl.trim() === "" && fl.length <= contentIndent) raw.pop()
     }
     // Trailing empty lines (a whitespace-only line longer than the indent is content).
     let last = raw.length - 1

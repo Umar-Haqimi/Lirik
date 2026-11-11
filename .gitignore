@@ -5,6 +5,9 @@ src/contents/locale
 # Lirik
 .refs/
 .local/
-node_modules/
+node_modules
 tests/snapshots/out/
 *.plasmoid
+
+# agent worktrees (Claude Code)
+.claude/worktrees/

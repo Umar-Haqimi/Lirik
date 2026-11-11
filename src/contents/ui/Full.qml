@@ -1,4 +1,6 @@
 import "./components"
+import "./lyrics"
+import "../code/sidepanel.mjs" as SidePanel
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.core as PlasmaCore
@@ -378,5 +380,35 @@ Item {
 
         }
 
+    }
+
+    // --- Lirik: toggle for the lyrics side panel (Hidden <-> the last used side) ---
+    readonly property string lyricsToggleText: plasmoid.configuration.lyricsSidePanelPosition === 0 ? i18n("Show lyrics") : i18n("Hide lyrics")
+
+    PlasmaComponents3.ToolButton {
+        id: lyricsToggle
+        visible: plasmoid.configuration.lyricsEnabled
+        z: 10
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: Kirigami.Units.smallSpacing
+        // below the player selector tabs when they are shown
+        anchors.topMargin: Kirigami.Units.smallSpacing + (headerbar.visible ? headerbar.height : 0)
+        display: PlasmaComponents3.AbstractButton.IconOnly
+        icon.name: lyricsIcon.name
+        text: root.lyricsToggleText
+        checkable: false
+        checked: plasmoid.configuration.lyricsSidePanelPosition !== 0
+        onClicked: {
+            const cfg = plasmoid.configuration
+            const next = SidePanel.toggleSidePanel(cfg.lyricsSidePanelPosition, cfg.lyricsSidePanelLastSide)
+            cfg.lyricsSidePanelLastSide = next.lastSide
+            cfg.lyricsSidePanelPosition = next.position
+        }
+        PlasmaComponents3.ToolTip.text: text
+        PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
+        PlasmaComponents3.ToolTip.visible: hovered
+
+        LyricsIconName { id: lyricsIcon }
     }
 }

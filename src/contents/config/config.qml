@@ -17,4 +17,9 @@ ConfigModel {
         icon: "preferences-system-windows-effect-slidingpopups"
         source: "config/Full.qml"
     }
+    ConfigCategory {
+        name: i18n("Lyrics")
+        icon: "view-media-lyrics"
+        source: "config/Lyrics.qml"
+    }
 }

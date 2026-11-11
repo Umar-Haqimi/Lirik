@@ -42,7 +42,16 @@ function scrubLrc(lrc, s) {
     }).join("\n")
 }
 
+// TTML <head> metadata carries real artist/album/ISRC/songwriter values in attributes.
+const META_PLACEHOLDER = { artists: "Placeholder Artist", artist: "Placeholder Artist", album: "Placeholder Album", isrc: "XX0000000000", songwriter: "Placeholder Writer" }
+const META_RE = /(<(?:[\w-]+:)?meta\b[^>]*?\bkey=")([^"]*)("[^>]*?\bvalue=")([^"]*)(")/g
+
+function scrubXmlMeta(xml) {
+    return xml.replace(META_RE, (m, a, key, b, val, c) => a + key + b + (META_PLACEHOLDER[key] || "Placeholder") + c)
+}
+
 function scrubXmlText(xml, s) {
+    xml = scrubXmlMeta(xml)
     // Replace text nodes only; leave tags/attributes untouched, except ttm:name / ttm:title bodies
     // which are covered as text nodes too.
     return xml.replace(/>([^<]+)</g, (m, text) => ">" + s(text) + "<")

@@ -9,8 +9,8 @@
   "scripts": {
     "check": "./tools/dev.sh check",
     "test": "./tools/dev.sh test",
-    "test:node": "node --test tests/node/",
-    "test:live": "node --test tests/live/"
+    "test:node": "node --test \"tests/node/**/*.test.mjs\"",
+    "test:live": "node --test \"tests/live/**/*.test.mjs\""
   },
   "devDependencies": {
     "@braccato/parsers": "0.4.1",

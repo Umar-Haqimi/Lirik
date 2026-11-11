@@ -24,37 +24,76 @@ Milestones from `docs/SPEC.md` §8. Each one ends with `./tools/dev.sh check` gr
   `.gitignore` additions.
 - Trivial test passing in Node, V4 (`qml` host) and qmltestrunner; offscreen smoke run passes.
 
-## M2 — Parsers and model (pure) 🟡 IN PROGRESS (committed as WIP)
+## M2 — Parsers and model (pure) ✅ (2026-11-10)
 
-Done (2026-11-10):
-- `src/contents/code/`: `constants`, `model` (normalize, stableSort, effectiveEnd), `lrc`, `yaml-lite`,
-  `lyricsfile`, `xml-lite`, `ttml`. All return `{ok, …}` and never throw.
-- Synthetic fixtures in `tests/fixtures/{lrc,lyricsfile,ttml,malformed-ttml}`; bundled for V4 by
-  `node tools/gen-fixtures.mjs` (re-run after editing fixtures; `dev.sh lint` checks it is current).
-- Shared tables in `tests/cases/` (model, lrc, yaml, lyricsfile, xml, ttml, fuzz), registered in
-  `tests/cases/index.mjs`.
-- Node: 79/79 pass. V4 (`tests/v4/host.qml`): 78/79 — see below.
+- Finished in the cloud session: differential tests in `tests/node/` (`braccato.test.mjs` LRC + TTML vs
+  `@braccato/parsers`, `yaml.test.mjs` yaml-lite vs `yaml` on every Lyricsfile fixture + 500 seeded documents).
+  Found and fixed a yaml-lite bug (phantom blank line for a trailing `|+` block). Intentional differences are in
+  D14. Fuzz: 2000 mutations per parser; over-budget inputs are re-timed (V4 GC jitter), see D14.
 
-Still to do for M2:
-1. **V4 failure:** one YAML fuzz case (`fuzz › fuzz yaml-lite` or `fuzz › fuzz lyricsfile`, varies run to run, so probably the 50 ms budget) fails under V4 only (Node passes). Not yet diagnosed — print
-   the V4-FAIL message (`QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qml tests/v4/host.qml`);
-   likely a throw/timeout in yaml-lite or lyricsfile under V4 (e.g. 50 ms budget or a V4 regex difference).
-2. Node-only differential tests in `tests/node/`: `lrc.mjs`/`ttml.mjs` vs `@braccato/parsers` on
-   well-formed fixtures (skip `[offset:]`; filter Braccato's synthetic instrumental lines), and
-   `yaml-lite` vs `yaml` (`schema: "failsafe"`, import from `node_modules/yaml/dist/index.js` works)
-   on all Lyricsfile fixtures + 500 seeded random documents. A scratch version of the yaml diff gave
-   10/10 identical.
-3. Record in `docs/DECISIONS.md`: background-vocal words live in `line.bgWords`; several leading LRC time
-   tags repeat the line; empty YAML value is `""` (failsafe); `[offset:]` intentionally differs from Braccato.
-4. Update `docs/FIXTURES.md` with the new fixture directories; run `./tools/dev.sh check`; commit.
+## M3 — Timeline and clock (pure) ✅ (2026-11-10)
 
-## Next milestones (not started)
-M3 timeline+clock (pure) → M4 lookup (trackinfo, match, providers, resolver, Http/Cache/Controller QML,
-stub server) → M5 panel lyrics → M6 side panel → M7 config page/i18n/perf → M8 hardening/docs/package.
-See `docs/SPEC.md` §8.
+- `timeline.mjs` (`frame()` with exact `nextChangeAt`), `clock.mjs` (anchor, report kinds, `msUntil` → −1 for
+  never). Opus review brute-forced ~500k frames against a naive reference; its findings (lingering-line bug,
+  P0 test strength, `Infinity` timer intervals, zero-length lines, shared module cache) were fixed. D16.
+
+## M4 — Lookup ✅ (2026-11-10)
+
+- Pure: `trackinfo`, `match`, `providers/{common,lrclib,unison}`, `resolver` (deps injected). Opus review found
+  21 issues (request budget acceptance failure, double callbacks, hostile-payload DoS, Retry-After caps, cache
+  provenance, re-entrancy, VEVO/YouTube/file-name cleaning, …) — all fixed. D17.
+- QML: `ui/lyrics/{Http,LyricsCache,LyricsController}.qml`; `tools/stub-server.mjs` (both APIs on one port,
+  fault injection, request log); `tests/live/live.test.mjs` (opt-in, passed 2/2 against the real APIs);
+  pure-QML Plasma stubs in `tests/qml/stubs/` used only when the real modules are missing.
+
+## M5 — Panel lyrics ✅ (2026-11-10)
+
+- `ui/lyrics/{PlaybackClock,LyricsTimeline,KaraokeLine,CompactLyrics}.qml`; patches: `main.qml`, `Compact.qml`
+  (CompactLyrics instead of SongAndArtistText), `Player.qml` (`rate`); all SPEC §5 keys appended to `main.xml`.
+- Snapshots (`dev.sh snap`) reviewed: word wipe mid-word at two timestamps, long line panned with the wipe
+  centred, paused, gap (title / dimmed last line); lyrics-off CompactLyrics is byte-identical to bare
+  SongAndArtistText. Opus review (checked against real KDE sources) fixes applied: no DB with lyrics off,
+  redirect allow-list check, dispose on destruction, update ordering, perf of silent re-anchors. D18.
+
+## M6 — Full view side panel ✅ (2026-11-10)
+
+- `ui/lyrics/{LyricsPanel,LyricLineDelegate,LyricsFooter,FullWithLyrics,LyricsIconName}.qml`, toggle button
+  in `Full.qml`, `fullRepresentation: FullWithLyrics {}`; `code/sidepanel.mjs` (toggle next-state, width clamp).
+- Every §4.2 state rendered light + dark and looked at; Unison credit with both links, LRCLIB credit.
+- Opus review fixes applied: animations-off = `longDuration <= 1` (Plasma clamps to 1 ms), PlainText on every
+  ToolTip, scroll-bar drag suspends following, CJK/kana/Hangul wrapping, RTL fallback, icon fallback chain,
+  click-to-seek follow, desktop parity width, translated error copy, frozen inputs while the popup is closed,
+  a11y (keyboard seek, focusable links), single-string credit line. D18, D20.
+
+## M7 — Config page and polish ✅ (2026-11-10)
+
+- `ui/config/Lyrics.qml` (fourth category), `ui/lyrics/LyricsEngine.qml` (controller + clock + timeline out of
+  main.qml, tested with a libkmpris-like fake player), tooltip line, animations-off, `bin/i18n extract`,
+  `tools/perf.sh` (desktop) + a work-counting proxy test. D19.
+
+## M8 — Hardening, docs, package ✅ (2026-11-10, desktop verification pending)
+
+- `tests/node/security.test.mjs` (every SPEC §6 item), `fixtures-hygiene.test.mjs` (placeholder vocabulary),
+  `package.test.mjs`; `tools/package.sh` (`dev.sh package` → `lirik-0.1.0.plasmoid`, src/ content only);
+  README, `docs/MANUAL_TEST.md`.
+- Gate in the cloud container: lint (14 QML files), Node 490, V4 427/427 (same set as Node), qmltestrunner 192,
+  snap green, package 67 files. Smoke skipped (no plasmoidviewer there).
+
+## Desktop verification 🟡 (started 2026-11-11) — see `docs/HANDOFF.md`
+
+- Run 1: stub-server tests + `perf` failed on a busy fixed port → fixed (D21).
+- Run 2: two side-panel tests failed against the real `Kirigami.WheelHandler` → fixed, incl. a real Resume bug (D22).
+- Run 3: **smoke fails** ("widget never saw the fake player"). The cloud session's last commit forces debug
+  logging for the smoke viewer and prints diagnostics on failure; root cause not yet known. `docs/HANDOFF.md`
+  lists the candidate causes and the remaining desktop-only checks (e2e, perf, view, MANUAL_TEST §4).
+
+## Next
+1. `docs/HANDOFF.md` Task 1 (smoke green) and Task 2 (e2e, perf, view, stub-only items).
+2. MVP acceptance (SPEC §9), then N1 … N8 (SPEC §3), one milestone each.
 
 ## Gotchas for a new session
 - Qt 6 tools are in `/usr/lib/qt6/bin` (`/usr/bin` ones are Qt 5). No `qmljs`: V4 runs via `qml`.
+- Cloud container: `export QT6BIN=/opt/qt/6.12.0/gcc_64/bin` (aqtinstall Qt 6.12 with qt5compat + qtshadertools); see D15.
 - Always `QT_FORCE_STDERR_LOGGING=1`; use `QT_QPA_PLATFORM=offscreen`. Never restart plasmashell.
 - Pure modules must stay in the V4 subset (docs/DECISIONS.md D2). Never write raw U+2028/2029/00A0
   characters into `.mjs` — use `\uXXXX` escapes (V4 rejected a raw separator in a string).

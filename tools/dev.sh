@@ -16,9 +16,29 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-QT6BIN=/usr/lib/qt6/bin
+QT6BIN="${QT6BIN:-/usr/lib/qt6/bin}"   # override for non-Plasma machines (docs/DECISIONS.md D15)
 export QT_FORCE_STDERR_LOGGING=1   # Qt logs to journald otherwise (docs/DECISIONS.md D1)
 OFFSCREEN="env QT_QPA_PLATFORM=offscreen"
+
+# Plasma modules: on a machine without Plasma 6 (cloud/CI) use the pure-QML stubs in tests/qml/stubs.
+# On the user's desktop the real modules exist and the stubs are never put on the import path.
+STUB_IMPORT=()      # for qmltestrunner
+STUB_LINT_IMPORT=() # for qmllint
+STUBS_DETECTED=0
+detect_plasma_modules() {
+    [ "$STUBS_DETECTED" = 1 ] && return 0
+    STUBS_DETECTED=1
+    local probe out
+    probe="$(mktemp --suffix=.qml)"
+    printf 'import org.kde.kirigami\nimport org.kde.plasma.components\nimport org.kde.plasma.core\nimport QtQml\nQtObject { Component.onCompleted: Qt.quit() }\n' > "$probe"
+    out="$($OFFSCREEN timeout 60 "$QT6BIN/qml" "$probe" 2>&1 || true)"
+    rm -f "$probe"
+    if echo "$out" | grep -q 'is not installed'; then
+        echo "${c_dim}notice: using test stubs for Plasma modules (tests/qml/stubs)${c_off}"
+        STUB_IMPORT=(-import tests/qml/stubs)
+        STUB_LINT_IMPORT=(-I tests/qml/stubs)
+    fi
+}
 
 c_red=$'\e[31m'; c_grn=$'\e[32m'; c_dim=$'\e[2m'; c_off=$'\e[0m'
 step() { echo "${c_dim}── $*${c_off}"; }
@@ -57,6 +77,10 @@ do_policy() {
     if grep -rnE '\basync\b|\bawait\b|\.matchAll\(|\.replaceAll\(|\.flatMap\(|Object\.fromEntries|\\p\{|\(\?<[=!]|\(\?<[a-zA-Z]|globalThis|import\.meta|\?\?=|\|\|=|&&=|\bIntl\b|setTimeout' src/contents/code; then
         die "non-V4 construct in src/contents/code (see docs/DECISIONS.md D2)"
     fi
+    # raw U+2028/U+2029/U+00A0/U+FEFF break V4 module loading; use \uXXXX escapes (docs/PROGRESS.md gotchas)
+    if LC_ALL=C grep -rnE $'\xe2\x80\xa8|\xe2\x80\xa9|\xc2\xa0|\xef\xbb\xbf' src/contents/code tests/cases; then
+        die "raw line/paragraph separator, NBSP or BOM in a .mjs file (use \\uXXXX escapes)"
+    fi
     if grep -rnE '\{\s*\.\.\.' src/contents/code; then
         die "object spread in src/contents/code (V4 cannot parse it)"
     fi
@@ -70,6 +94,20 @@ do_policy() {
         if grep -nE '^\s*(PlasmaComponents3\.Label|Text|PC\.Label|Label)\s*\{' "$qf" >/dev/null; then
             # every Text/Label block in lyric components must set textFormat somewhere in the file
             grep -q 'Text.PlainText' "$qf" || die "$qf renders text without textFormat: Text.PlainText"
+        fi
+    done
+    # upstream parity: main.xml may only ADD keys relative to the fork point (SPEC §5 minimal-diff rule)
+    if git cat-file -e 9b63a0d 2>/dev/null; then
+        if git diff 9b63a0d -- src/contents/config/main.xml | grep -E '^-[^-]'; then
+            die "main.xml: lines were removed or changed relative to 9b63a0d (only additions are allowed)"
+        fi
+    fi
+    # every ToolTip in lyric components must set textFormat within its first lines: tooltips can show provider
+    # text and the PC3 ToolTip is AutoText by default (an <img> would be fetched)
+    for qf in src/contents/ui/lyrics/*.qml; do
+        [ -f "$qf" ] || continue
+        if ! awk '/ToolTip \{/ { want = NR + 6; open = 1; next } open && /textFormat: Text.PlainText/ { open = 0 } open && NR > want { print FILENAME ":" NR ": ToolTip without textFormat"; open = 0; bad = 1 } END { exit bad }' "$qf"; then
+            die "$qf has a ToolTip without textFormat: Text.PlainText"
         fi
     done
     # the fixtures bundle is current
@@ -86,8 +124,9 @@ do_qmllint() {
     [ -f src/contents/ui/config/Lyrics.qml ] && files+=(src/contents/ui/config/Lyrics.qml)
     if [ ${#files[@]} -eq 0 ]; then ok "qmllint (no Lirik QML yet)"; return; fi
     local out
-    # -I so sibling and code imports resolve; plasma modules come from the system import path.
-    if ! out="$("$QT6BIN/qmllint" -I src/contents/ui -I src/contents/ui/lyrics "${files[@]}" 2>&1)"; then
+    detect_plasma_modules
+    # -I so sibling and code imports resolve; plasma modules come from the system import path (or the stubs).
+    if ! out="$("$QT6BIN/qmllint" "${STUB_LINT_IMPORT[@]}" -I src/contents/ui -I src/contents/ui/lyrics "${files[@]}" 2>&1)"; then
         echo "$out"
         die "qmllint"
     fi
@@ -106,12 +145,15 @@ do_lint() {
 
 do_node() {
     step "node --test"
-    node --test tests/node/ 2>&1 | tail -n 9 > /tmp/lirik-node-$$.txt || { cat /tmp/lirik-node-$$.txt; node --test tests/node/ 2>&1 | grep -B2 -A20 'not ok' | head -80; rm -f /tmp/lirik-node-$$.txt; die "node tests"; }
-    local pass fail
-    pass=$(grep -E '^ℹ pass' /tmp/lirik-node-$$.txt | awk '{print $3}')
-    fail=$(grep -E '^ℹ fail' /tmp/lirik-node-$$.txt | awk '{print $3}')
-    rm -f /tmp/lirik-node-$$.txt
-    [ "$fail" = "0" ] || die "node tests: $fail failed"
+    # Explicit glob + TAP reporter so Node 22 and 26 print the same summary (docs/DECISIONS.md D15).
+    local out pass fail
+    out="$(node --test --test-reporter=tap tests/node/*.test.mjs 2>&1)" || true
+    pass=$(echo "$out" | grep -E '^# pass ' | awk '{print $3}')
+    fail=$(echo "$out" | grep -E '^# fail ' | awk '{print $3}')
+    if [ -z "$pass" ] || [ "$fail" != "0" ]; then
+        echo "$out" | grep -B2 -A25 -E '^\s*not ok' | head -120
+        die "node tests (pass=${pass:-?} fail=${fail:-?})"
+    fi
     ok "node --test: $pass passed"
 }
 
@@ -129,34 +171,75 @@ do_v4() {
 
 do_qml() {
     step "qmltestrunner (offscreen)"
-    local out
-    out="$($OFFSCREEN timeout 300 "$QT6BIN/qmltestrunner" -input tests/qml -import src/contents/ui 2>&1)" || { echo "$out" | grep -vE '^PASS' | tail -60; die "qmltestrunner"; }
+    local out rc=0
+    detect_plasma_modules
+    # The stub server backs tests/qml/tst_stub.qml. It binds a FREE port (a stray process on a fixed port must
+    # never be mistaken for it); the port reaches the test through a generated QML module on a temp import path.
+    local envdir; envdir="$(mktemp -d)"
+    TMP_DIRS+=("$envdir")
+    local sport=0 ssecond=0
+    if [ -f tools/stub-server.mjs ] && [ -z "$STUB_PID" ]; then
+        mkdir -p .local
+        local pfile="$envdir/stub-port.json"
+        node tools/stub-server.mjs --port 0 --port-file "$pfile" > .local/stub-qml.log 2>&1 &
+        STUB_PID=$!
+        local i
+        for i in $(seq 1 50); do
+            [ -s "$pfile" ] && break
+            kill -0 "$STUB_PID" 2>/dev/null || break
+            sleep 0.1
+        done
+        [ -s "$pfile" ] || { cat .local/stub-qml.log; die "stub server did not start (see .local/stub-qml.log)"; }
+        sport="$(node -e "const j=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(j.port||0)" "$pfile")"
+        ssecond="$(node -e "const j=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(j.second||0)" "$pfile")"
+    fi
+    mkdir -p "$envdir/LirikTestEnv"
+    printf 'module LirikTestEnv\nsingleton Env 1.0 Env.qml\n' > "$envdir/LirikTestEnv/qmldir"
+    printf 'pragma Singleton\nimport QtQml\nQtObject {\n    readonly property int stubPort: %s\n    readonly property int stubSecondPort: %s\n}\n' "$sport" "$ssecond" > "$envdir/LirikTestEnv/Env.qml"
+    out="$($OFFSCREEN timeout 300 "$QT6BIN/qmltestrunner" -input tests/qml -import src/contents/ui -import "$envdir" "${STUB_IMPORT[@]}" 2>&1)" || rc=$?
+    cleanup_bg
+    [ "$rc" = 0 ] || { echo "$out" | grep -vE '^PASS' | tail -60; die "qmltestrunner"; }
     local totals; totals="$(echo "$out" | grep -E '^Totals' | tail -1)"
     echo "$out" | grep -E '^FAIL' && die "qmltestrunner failures"
+    echo "$out" | grep -E '^SKIP' | head -5 || true
     ok "qmltestrunner: $totals"
 }
 
-FAKE_PID=""; STUB_PID=""
+FAKE_PID=""; STUB_PID=""; TMP_DIRS=()
 cleanup_bg() {
     [ -n "$FAKE_PID" ] && kill "$FAKE_PID" 2>/dev/null || true
     [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null || true
     FAKE_PID=""; STUB_PID=""
+    local d
+    for d in "${TMP_DIRS[@]}"; do rm -rf "$d"; done
+    TMP_DIRS=()
 }
 trap cleanup_bg EXIT
+trap 'cleanup_bg; exit 130' INT TERM HUP
 
 do_smoke() {
     step "smoke: offscreen plasmoidviewer + fake player (20 s)"
+    if ! command -v plasmoidviewer >/dev/null 2>&1; then
+        echo "${c_red}! SKIPPED smoke: plasmoidviewer not installed (no Plasma 6 on this machine)${c_off}"
+        return 0
+    fi
     mkdir -p .local/smoke
     node tools/fake-player.mjs --name lirikfake --autoplay tests/fixtures/tracks/smoke.json < /dev/null > .local/smoke/fake.log 2>&1 &
     FAKE_PID=$!
     if [ -f tools/stub-server.mjs ]; then
-        node tools/stub-server.mjs --port 47800 > .local/smoke/stub.log 2>&1 &
+        node tools/stub-server.mjs --port 0 > .local/smoke/stub.log 2>&1 &
         STUB_PID=$!
     fi
     sleep 1
     local log=.local/smoke/viewer.log
     # plasmoidviewer cannot be quit from QML (docs/DECISIONS.md D8), so `timeout` bounds it.
-    $OFFSCREEN timeout 20 plasmoidviewer -a src/ -f horizontal > "$log" 2>&1 || true
+    # The pass marker below is upstream's console.debug; force debug output on (a desktop's qtlogging.ini often
+    # disables *.debug, which would hide it).
+    QT_LOGGING_RULES="js.debug=true;qml.debug=true" $OFFSCREEN timeout 20 plasmoidviewer -a src/ -f horizontal > "$log" 2>&1 || true
+    local busnames=""
+    command -v busctl >/dev/null 2>&1 && busnames="$(busctl --user list 2>/dev/null | grep -o 'org.mpris.MediaPlayer2\.[^ ]*' | sort -u | tr '\n' ' ')"
+    local fake_alive="no"
+    [ -n "$FAKE_PID" ] && kill -0 "$FAKE_PID" 2>/dev/null && fake_alive="yes"
     cleanup_bg
     if grep -E "$OUR_QML_RE" "$log" | grep -vE 'qml: (Lirik|Player ready)' | grep -E ':[0-9]+(:[0-9]+)?: ' ; then
         die "QML warnings/errors from Lirik files (see $log)"
@@ -164,7 +247,15 @@ do_smoke() {
     if grep -E 'TypeError|ReferenceError|SyntaxError|is not installed|unavailable|Cannot assign' "$log" | grep -v 'org.kde.desktopcontainment' ; then
         die "QML errors during smoke (see $log)"
     fi
-    grep -q 'Player ready changed: true' "$log" || die "widget never saw the fake player (see $log)"
+    if ! grep -q 'Player ready changed: true' "$log"; then
+        echo "── smoke diagnostics"
+        echo "fake player still running at the end: $fake_alive"
+        echo "MPRIS players on the session bus: ${busnames:-<busctl unavailable or none>}"
+        echo "── .local/smoke/fake.log (tail)"; tail -n 15 .local/smoke/fake.log
+        echo "── viewer log, Lirik/Player/QML lines (tail)"
+        grep -E 'Lirik|Player|\.qml|\.mjs|rror' "$log" | grep -v 'org.kde.desktopcontainment' | tail -n 25
+        die "widget never saw the fake player (full log: $log)"
+    fi
     ok "smoke"
 }
 
@@ -189,15 +280,6 @@ case "${1:-check}" in
     e2e) exec node tools/e2e.mjs "${@:2}" ;;
     snap) exec bash tests/snapshots/render.sh ;;
     perf) exec bash tools/perf.sh ;;
-    package)
-        ver="$(node -e "console.log(require('./src/metadata.json').KPlugin.Version)")"
-        out="lirik-$ver.plasmoid"
-        rm -f "$out"
-        bin/i18n compile >/dev/null
-        (cd src && zip -qr "../$out" . -x '*.swp' -x '*~')
-        rm -rf src/contents/locale
-        unzip -l "$out" | awk 'NR>3 {print $4}' | grep -vE '^(metadata\.json|contents/.*|translate/.*)?$' && die "unexpected file in package"
-        ok "built $out"
-        ;;
+    package) exec bash tools/package.sh ;;
     *) sed -n '2,12p' "$0"; exit 1 ;;
 esac

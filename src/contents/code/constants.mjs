@@ -77,9 +77,36 @@ export const LINE_OPACITY_ACTIVE = 1.0
 export const LINE_OPACITY_UPCOMING = 0.6
 export const LINE_OPACITY_PAST = 0.4
 export const SIDE_PANEL_MIN_HEIGHT = 320
+export const SIDE_PANEL_MIN_WIDTH = 200 // also the narrowest a desktop panel may get
+export const SIDE_PANEL_MAX_WIDTH = 600
+// Plasma never sets durations to 0: with animations off the clamp is 1 ms (libplasma units.cpp); KDE code tests > 1.
+export const ANIMATIONS_OFF_MAX_MS = 1
+// After clicking a line, follow that line (not the old primary) for at most this long.
+export const CLICK_FOLLOW_MS = 1500
 
 // --- Providers --------------------------------------------------------------
 export const LRCLIB_BASE = "https://lrclib.net"
 export const UNISON_BASE = "https://unison.betterlyrics.org"
 export const ALLOWED_HOSTS = ["lrclib.net", "unison.betterlyrics.org"]
 export const PROVIDER_NAMES = ["lrclib", "unison"]
+
+// --- Lookup pipeline additions (M4) ----------------------------------------
+export const DURATION_UNKNOWN_SCORE = 0.2 // a candidate with no duration ranks below any known match
+export const MATCH_CONTAINMENT_SCORE = 0.85 // artist token containment ("Beyonce" in "Beyonce Knowles")
+export const RANK_INSTRUMENTAL = 150 // above plain, below any synced tier
+export const INCOMPLETE_TTL_MS = 3600 * 1000 // cached result from a lookup where a provider failed
+export const MAX_RETRY_AFTER_S = 3600
+export const AUTO_RETRY_MAX = 5 // automatic retries after a cooldown, per track
+export const LRCLIB_MAX_CANDIDATE_TRIES = 2 // get/{id} attempts after a search
+export const ALT_MAX_TRIES = 4
+
+// --- Review fixes (M4a) ------------------------------------------------------
+export const MAX_META_CHARS = 300 // title / artist / album cap before any text processing
+export const MAX_ARTISTS = 8 // artist names considered per artist string
+export const MAX_CANDIDATES_CONSIDERED = 20 // search candidates mapped and ranked
+export const RANK_UNKNOWN_DURATION_PENALTY = 10
+export const PENDING_MAX_WAIT_S = 10 // LOOKUP_PENDING: longer Retry-After becomes a provider cooldown
+export const THROTTLE_WINDOW_MS = 5000 // at most THROTTLE_MAX_STARTS lookups per provider in this window
+export const THROTTLE_MAX_STARTS = 2
+export const DEBOUNCE_MAX_MS = 2000 // adaptive debounce ceiling while tracks keep changing
+export const QUIET_RESET_MS = 5000
