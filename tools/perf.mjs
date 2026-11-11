@@ -87,6 +87,7 @@ function patchDefault(name, type, value) {
 patchDefault("lyricsDevBaseUrl", "String", STUB_ORIGIN_TOKEN)
 patchDefault("choosePlayerAutomatically", "Bool", "false")
 patchDefault("preferredPlayerIdentity", "String", FAKE_IDENTITY)
+patchDefault("pauseTextScrollingWhileMediaIsNotPlaying", "Bool", "true")
 fs.writeFileSync(xmlPath, xml)
 
 function run(name, cmd, args, env) {

@@ -17,16 +17,9 @@ OUT="$ROOT/tests/snapshots/out"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
-# Plasma / Qt5Compat stubs only when the real modules are missing (same rule as tools/dev.sh).
-IMPORTS=()
-probe="$(mktemp --suffix=.qml)"
-printf 'import org.kde.kirigami\nimport org.kde.plasma.components\nimport QtQml\nQtObject { Component.onCompleted: Qt.quit() }\n' > "$probe"
-probe_out="$(timeout 60 "$QT6BIN/qml" "$probe" 2>&1 || true)"
-if echo "$probe_out" | grep -q 'is not installed'; then
-    echo "notice: using test stubs for Plasma modules (tests/qml/stubs)"
-    IMPORTS=(-I "$ROOT/tests/qml/stubs")
-fi
-rm -f "$probe"
+# Snapshots require the reproducible Breeze Light/Dark palettes and stubs in tests/qml/stubs
+# (panel-harness explicitly relies on the stub Theme's `dark` switch; offscreen real Kirigami has no color scheme).
+IMPORTS=(-I "$ROOT/tests/qml/stubs")
 
 log="$OUT/render.log"
 timeout 120 "$QT6BIN/qml" "${IMPORTS[@]}" tests/snapshots/harness.qml > "$log" 2>&1 || { cat "$log"; echo "snapshot harness failed" >&2; exit 1; }

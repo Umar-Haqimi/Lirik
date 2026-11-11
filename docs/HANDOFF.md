@@ -87,3 +87,22 @@ In this order, fixing what breaks:
 ## After the desktop checks are green
 
 MVP acceptance per SPEC §9 (the checklist there), then the nice-to-haves N1…N8 (SPEC §3), one milestone each.
+
+## Desktop session 2026-11-11 (cut short by usage limit) — smoke findings so far
+
+- `./tools/dev.sh smoke` still fails. Diagnostics now work and rule out causes 1 and 2: no `qtlogging.ini`
+  exists, the fake player stays alive, and `org.mpris.MediaPlayer2.lirikfake` is on the bus next to
+  `org.mpris.MediaPlayer2.kdeconnect.mpris_<id>` (a KDE Connect phone player).
+- `.local/smoke/viewer.log` has **no error from any Lirik file** and no `Player ready changed` line at all
+  (only `qml: View QML loaded`, the desktopcontainment `isScreenUiReady` TypeError, KWindowShadow noise).
+  So `Player.ready` never flipped, or `onReadyChanged` output is lost. Remaining suspects, in order:
+  1. Cause 3: with the real config (`choosePlayerAutomatically=true`) the multiplexer / `Mpris2Model` may be
+     following the kdeconnect player (no metadata ⇒ `ready` false). Quick test: run the e2e-style patched copy
+     (`choosePlayerAutomatically=false`, `preferredPlayerIdentity="Lirik Fake Player"`) in smoke, i.e. reuse
+     `tools/e2e.mjs` patchDefault + temp `XDG_*` dirs. Or stop kdeconnect's MPRIS temporarily and re-run.
+  2. `Mpris2Model` may reject the fake player (libkmpris drops a container whose initial `GetAll` fails or lacks
+     a property). Compare `tools/fake-player.mjs` against `.refs/plasma-workspace/libkmpris/playercontainer.cpp`.
+  3. Output loss: a manual run with `QT_LOGGING_RULES="*.debug=true;qt.*.debug=false"` logged only the
+     "QML debugging is enabled" line, so broad rules can silence `qml`/`js` output; keep the stage's exact rules
+     and consider `QT_FORCE_STDERR_LOGGING=1` as well (Qt logs to journald when stderr is not a tty).
+- Nothing was changed in `src/` or `tools/` this session; `.local/smoke/*-manual.log` are scratch.

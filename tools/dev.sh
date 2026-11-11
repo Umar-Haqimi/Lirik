@@ -193,10 +193,10 @@ do_qml() {
         sport="$(node -e "const j=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(j.port||0)" "$pfile")"
         ssecond="$(node -e "const j=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(j.second||0)" "$pfile")"
     fi
-    mkdir -p "$envdir/LirikTestEnv"
+    mkdir -p "$envdir/LirikTestEnv" "$envdir/data" "$envdir/config" "$envdir/cache"
     printf 'module LirikTestEnv\nsingleton Env 1.0 Env.qml\n' > "$envdir/LirikTestEnv/qmldir"
     printf 'pragma Singleton\nimport QtQml\nQtObject {\n    readonly property int stubPort: %s\n    readonly property int stubSecondPort: %s\n}\n' "$sport" "$ssecond" > "$envdir/LirikTestEnv/Env.qml"
-    out="$($OFFSCREEN timeout 300 "$QT6BIN/qmltestrunner" -input tests/qml -import src/contents/ui -import "$envdir" "${STUB_IMPORT[@]}" 2>&1)" || rc=$?
+    out="$(XDG_DATA_HOME="$envdir/data" XDG_CONFIG_HOME="$envdir/config" XDG_CACHE_HOME="$envdir/cache" $OFFSCREEN timeout 300 "$QT6BIN/qmltestrunner" -input tests/qml -import src/contents/ui -import "$envdir" "${STUB_IMPORT[@]}" 2>&1)" || rc=$?
     cleanup_bg
     [ "$rc" = 0 ] || { echo "$out" | grep -vE '^PASS' | tail -60; die "qmltestrunner"; }
     local totals; totals="$(echo "$out" | grep -E '^Totals' | tail -1)"
@@ -233,9 +233,30 @@ do_smoke() {
     sleep 1
     local log=.local/smoke/viewer.log
     # plasmoidviewer cannot be quit from QML (docs/DECISIONS.md D8), so `timeout` bounds it.
+    # Run a temp copy with preferredPlayerIdentity and isolated XDG dirs so other desktop players
+    # (e.g. browser, Spotify, phone) never steal the multiplexer and user configs are untouched.
+    local smokedir; smokedir="$(mktemp -d)"
+    TMP_DIRS+=("$smokedir")
+    cp -r src "$smokedir/src"
+    node -e '
+        const fs = require("fs");
+        const p = process.argv[1];
+        let s = fs.readFileSync(p, "utf8");
+        function patch(name, type, val) {
+            const re = new RegExp("(<entry name=\"" + name + "\" type=\"" + type + "\">\\s*<default>)[^<]*(</default>)");
+            if (!re.test(s)) throw new Error("not found: " + name);
+            s = s.replace(re, "$1" + val + "$2");
+        }
+        patch("choosePlayerAutomatically", "Bool", "false");
+        patch("preferredPlayerIdentity", "String", "Lirik Fake Player");
+        fs.writeFileSync(p, s);
+    ' "$smokedir/src/contents/config/main.xml"
+    mkdir -p "$smokedir/data" "$smokedir/config" "$smokedir/cache"
+
     # The pass marker below is upstream's console.debug; force debug output on (a desktop's qtlogging.ini often
     # disables *.debug, which would hide it).
-    QT_LOGGING_RULES="js.debug=true;qml.debug=true" $OFFSCREEN timeout 20 plasmoidviewer -a src/ -f horizontal > "$log" 2>&1 || true
+    XDG_DATA_HOME="$smokedir/data" XDG_CONFIG_HOME="$smokedir/config" XDG_CACHE_HOME="$smokedir/cache" \
+        QT_LOGGING_RULES="js.debug=true;qml.debug=true" $OFFSCREEN timeout 20 plasmoidviewer -a "$smokedir/src" -f horizontal > "$log" 2>&1 || true
     local busnames=""
     command -v busctl >/dev/null 2>&1 && busnames="$(busctl --user list 2>/dev/null | grep -o 'org.mpris.MediaPlayer2\.[^ ]*' | sort -u | tr '\n' ' ')"
     local fake_alive="no"

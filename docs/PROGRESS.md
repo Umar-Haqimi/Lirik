@@ -79,16 +79,19 @@ Milestones from `docs/SPEC.md` §8. Each one ends with `./tools/dev.sh check` gr
 - Gate in the cloud container: lint (14 QML files), Node 490, V4 427/427 (same set as Node), qmltestrunner 192,
   snap green, package 67 files. Smoke skipped (no plasmoidviewer there).
 
-## Desktop verification 🟡 (started 2026-11-11) — see `docs/HANDOFF.md`
+## Desktop verification ✅ (2026-11-11) — see `docs/HANDOFF.md`
 
 - Run 1: stub-server tests + `perf` failed on a busy fixed port → fixed (D21).
 - Run 2: two side-panel tests failed against the real `Kirigami.WheelHandler` → fixed, incl. a real Resume bug (D22).
-- Run 3: **smoke fails** ("widget never saw the fake player"). The cloud session's last commit forces debug
-  logging for the smoke viewer and prints diagnostics on failure; root cause not yet known. `docs/HANDOFF.md`
-  lists the candidate causes and the remaining desktop-only checks (e2e, perf, view, MANUAL_TEST §4).
+- Run 3: desktop check fixes completed (D23):
+  - `dev.sh check` fully green (lint, 490 node tests, 427 V4 tests, 184 qmltestrunner tests with 8 skips, offscreen smoke test).
+  - `dev.sh e2e` green (offscreen plasmoidviewer title -> lyric -> title flow).
+  - `dev.sh perf` green (playing average 1.91 % < 2 % budget, paused average 0.00 % <= 0.5 % budget).
+  - `dev.sh snap` green (all 10 snapshot checks and diff assertions pass).
+  - `dev.sh package` green (built `lirik-0.1.0.plasmoid`, validated with `kpackagetool6`).
 
 ## Next
-1. `docs/HANDOFF.md` Task 1 (smoke green) and Task 2 (e2e, perf, view, stub-only items).
+1. Interactive manual inspection (`./tools/dev.sh view horizontal` / `view planar`) and user's per-player testing (`docs/MANUAL_TEST.md`).
 2. MVP acceptance (SPEC §9), then N1 … N8 (SPEC §3), one milestone each.
 
 ## Gotchas for a new session
