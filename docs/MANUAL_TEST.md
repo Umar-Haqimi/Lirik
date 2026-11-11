@@ -31,9 +31,9 @@ Run from a checkout of this repository.
   (needs a player; the fake player works: `node tools/fake-player.mjs --autoplay tests/fixtures/tracks/smoke.json`
   in another terminal, plus `node tools/stub-server.mjs` if you want lyrics from the stub).
 - [ ] `./tools/dev.sh view vertical` opens and does not break (panel stays in title mode, by design).
-- [ ] `./tools/dev.sh package` builds `lirik-0.1.0.plasmoid`; on this machine it also prints
+- [ ] `./tools/dev.sh package` builds `lirik-1.0.0.plasmoid`; on this machine it also prints
   `kpackagetool6 accepted ...` (validated in a temporary root).
-- [ ] Install: `kpackagetool6 -t Plasma/Applet -i src/` (or `-i lirik-0.1.0.plasmoid`; later `-u`).
+- [ ] Install: `kpackagetool6 -t Plasma/Applet -i src/` (or `-i lirik-1.0.0.plasmoid`; later `-u`).
 - [ ] `kpackagetool6 -t Plasma/Applet --list` shows **both** `my.umarh.lirik` and, if installed, upstream
   `plasmusic-toolbar`.
 - [ ] Right-click the panel, Add Widgets, find "Lirik", add it to the panel. It appears and shows the playing

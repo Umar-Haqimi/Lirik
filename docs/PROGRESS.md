@@ -90,6 +90,16 @@ Milestones from `docs/SPEC.md` §8. Each one ends with `./tools/dev.sh check` gr
   - `dev.sh snap` green (all 10 snapshot checks and diff assertions pass).
   - `dev.sh package` green (built `lirik-0.1.0.plasmoid`, validated with `kpackagetool6`).
 
+## Release 1.0.0 (2026-11-11)
+
+- Version bumped to 1.0.0 in `src/metadata.json`, `constants.mjs`, `package.json` and the docs; `lirik-1.0.0.plasmoid`
+  built with `dev.sh package` (67 files, kpackagetool6 accepted). Credit-line i18n fix included.
+- `CHANGELOG.md` has a Lirik 1.0.0 section above the upstream history; the GitHub release body is
+  `docs/releases/v1.0.0.md`. `.release-please-manifest.json` now starts at 1.0.0 and the workflow names the
+  asset `lirik-<tag>.plasmoid`.
+- Note: the local clone carries upstream's tags (v0.2 … v4.3.1, including a `v1.0.0`); origin has none. Delete the
+  local `v1.0.0` before tagging the release.
+
 ## Next
 1. Interactive manual inspection (`./tools/dev.sh view horizontal` / `view planar`) and user's per-player testing (`docs/MANUAL_TEST.md`).
 2. MVP acceptance (SPEC §9), then N1 … N8 (SPEC §3), one milestone each.

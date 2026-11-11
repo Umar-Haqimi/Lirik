@@ -1,7 +1,7 @@
 {
   "name": "lirik-dev",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Dev tooling for the Lirik plasmoid (never shipped).",
   "license": "GPL-3.0-or-later",
   "type": "module",

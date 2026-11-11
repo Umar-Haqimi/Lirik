@@ -45,14 +45,14 @@ jobs:
           TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
         run: |
           cd ./src
-          zip -r "../plasmusic-toolbar-${TAG_NAME}.plasmoid" .
+          zip -r "../lirik-${TAG_NAME}.plasmoid" .
 
       - name: Upload plasmoid package to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          gh release upload "$TAG_NAME" "./plasmusic-toolbar-${TAG_NAME}.plasmoid"
+          gh release upload "$TAG_NAME" "./lirik-${TAG_NAME}.plasmoid"
 
       - name: Publish release
         env:
