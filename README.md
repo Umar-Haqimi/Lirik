@@ -5,7 +5,8 @@ word-by-word lyrics**, in the panel and in a side panel of the full view.
 
 Lirik is a fork of [PlasMusic Toolbar](https://github.com/ccatterina/plasmusic-toolbar) by Claudio Catterina
 (GPL-3.0). Everything upstream does still works; with lyrics switched off Lirik behaves like upstream. Lyrics
-come from [LRCLIB](https://lrclib.net) and [Unison](https://unison.betterlyrics.org). Upstream's README is kept
+come from [LRCLIB](https://lrclib.net), [Unison](https://unison.betterlyrics.org) and the
+[Better Lyrics API](https://docs.betterlyrics.org). Upstream's README is kept
 as [`README.upstream.md`](README.upstream.md).
 
 ## Features
@@ -16,7 +17,7 @@ as [`README.upstream.md`](README.upstream.md).
 - **Side panel in the full view.** Scrolling lyrics with per-word highlight, overlapping vocals, a gap
   indicator, click a line to seek, and a footer with credits, the sync kind and a per-track timing offset. The
   panel can sit on the left, on the right or be hidden, and has a toggle button.
-- **Providers.** LRCLIB and Unison, in either order; word-synced, line-synced, plain and instrumental results;
+- **Providers.** LRCLIB, Unison and the Better Lyrics API (Better Lyrics on by default; Kugou and QQ as opt-ins), you choose which one is asked first; word-synced, line-synced, plain and instrumental results;
   the best version wins and other matches can be tried from the footer menu.
 - **Cache.** Found lyrics and "not found" answers are remembered on your computer (SQLite through Qt's
   LocalStorage) so tracks you replay need no network. Per-track offset, hide and pinned-version choices are
@@ -65,7 +66,7 @@ Widget settings → **Lyrics**:
 
 | Section | What you can set |
 | --- | --- |
-| Sources | Enable lyrics (master switch), LRCLIB and Unison, which one is asked first, a global timing offset (ms; positive for delayed audio such as Bluetooth) |
+| Sources | Enable lyrics (master switch), one checkbox per provider (LRCLIB, Unison, Better Lyrics, Kugou, QQ), **Ask first** (which provider is asked first), a global timing offset (ms; positive for delayed audio such as Bluetooth) |
 | Panel | Lyrics in the panel, karaoke highlight, title during long pauses, gap length |
 | Full view | Side panel position (hidden, left, right) and width, karaoke highlight, text alignment, text size |
 | Filtering | Skip tracks shorter or longer than N seconds, players that never get lookups |
@@ -85,7 +86,15 @@ All upstream settings (General, Compact, Full) are unchanged. In the side panel 
   the community member who submitted it, linked to their page. Unison states that applications without this
   attribution may lose API access after 7 February 2027; do not remove the credit.
 
-Only these two hosts can be contacted. Credit links open only when they point at those hosts.
+- **Better Lyrics API** ([api.betterlyrics.org](https://docs.betterlyrics.org)) offers three endpoints, each a
+  separate provider in Settings → Lyrics: **Better Lyrics** (word- or line-synced, on by default),
+  **Kugou (Better Lyrics)** and **QQ (Better Lyrics)** (off by default). It serves only songs that are already in
+  its cache (it answers "API key required" for anything else, which Lirik treats as "not found"), and all three
+  endpoints share one rate limit, so enabling Kugou and QQ sends up to three requests per track. Results are
+  credited as "Lyrics from <name>" with a link to [better-lyrics.boidu.dev](https://better-lyrics.boidu.dev).
+
+Only these three hosts can be contacted. Credit links open only when they point at the provider hosts or the Better
+Lyrics site.
 
 ## Privacy
 
@@ -107,7 +116,7 @@ and no key. Lirik never runs external programs.
 ## Lyrics ownership
 
 Lyrics belong to their respective owners. Lirik does not ship, host or redistribute lyrics: it fetches them
-on demand from LRCLIB and Unison, shows them, and keeps a private cache on your computer. This repository
+on demand from LRCLIB, Unison and the Better Lyrics API, shows them, and keeps a private cache on your computer. This repository
 contains only synthetic placeholder text in its tests.
 
 ## Development
@@ -149,8 +158,9 @@ a real desktop), `CONTRIBUTING.md`, `TRANSLATIONS.md`.
   (GPL-3.0), the fork origin; its git history is preserved here.
 - [Braccato](https://github.com/better-lyrics/braccato) (MIT): the behaviour reference for the LRC and TTML
   parsers and a development-only test oracle. No code copied.
-- [LRCLIB](https://lrclib.net) and [Unison](https://unison.betterlyrics.org) by Better Lyrics and their
-  communities for the lyrics. No Unison server code (AGPL-3.0) is used.
+- [LRCLIB](https://lrclib.net), [Unison](https://unison.betterlyrics.org) and the
+  [Better Lyrics API](https://docs.betterlyrics.org) by Better Lyrics and their communities for the lyrics. No Unison
+  server code (AGPL-3.0) and no Better Lyrics API server code (GPL-3.0) is used.
 - [Lyricsfile](https://github.com/tranxuanthang/lyricsfile) format by tranxuanthang.
 
 Details in [`NOTICE.md`](NOTICE.md).

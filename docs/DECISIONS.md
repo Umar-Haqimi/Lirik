@@ -494,3 +494,53 @@ All desktop-only checks (`smoke`, `e2e`, `perf`, `snap`, `package`) are now gree
 - **Package CLI fallback**: On standard Arch desktop systems where the legacy `zip` command is omitted, `tools/package.sh`
   falls back to `python3`'s standard library `zipfile` module. Validated with `kpackagetool6`.
 
+
+## D24. Better Lyrics API providers (`betterlyrics`, `kugou`, `qq`)
+
+Added after v1.0.0. SPEC §2.1i has the API facts; the choices:
+
+- **Three providers, one module.** `betterlyrics` (`GET /getLyrics`, TTML), `kugou` (`/kugou/getLyrics`, LRC) and `qq`
+  (`/qq/getLyrics`, QRC) are separate entries in `PROVIDER_NAMES`, each with its own checkbox, so a user can take the
+  word-timed TTML without the Chinese-catalogue endpoints. `providers/betterlyrics.mjs` serves all three; the
+  resolver dispatches on the name. SPEC §2.1i is "i)", not "g)", so the existing §2.1f/g/h references in code and docs
+  keep their meaning.
+- **Defaults.** `betterlyrics` is on (`DEFAULT_PROVIDERS = "lrclib,unison,betterlyrics"`, also the `main.xml` default,
+  the controller/engine defaults and the config page's Defaults button). `kugou` and `qq` are opt-in: the three
+  endpoints share one per-IP limiter (burst 15 observed live), so enabling all three triples the requests per track.
+  An existing install that has an explicit `lyricsProviders` value (e.g. `lrclib,unison`) keeps exactly that list and
+  never contacts api.betterlyrics.org until the user ticks it; one without an explicit value follows the new default.
+  Whether a given install wrote the key is not something the code can know (not verified on a real upgrade), so the
+  release notes should say that updating may start sending lookups to api.betterlyrics.org.
+- **`401` is "not found", on every endpoint.** Fetching a song they do not have needs an `X-API-Key` that is not being
+  issued, so the API is cache-only for us. Verified live (2026-11-11): `/kugou/getLyrics` answers the same `401` for an
+  uncached song, although the docs say kugou and qq never need a key. A `401` is therefore a normal miss: cached 6 h
+  like any `notfound`, so a song that reaches their cache later is found on a later play. `404` and `422` are misses
+  too. **`503` (cache-only mode) is an `error`**, not a miss: it is temporary and must not hide lyrics for 6 h; an
+  error also keeps the lookup "incomplete" (short cache TTL for other providers' results).
+- **One cooldown for the three.** `COOLDOWN_GROUP` maps them to one key, so a `429` on any pauses all three (the
+  limiter is per IP for the whole API). The per-provider throttle (2 starts per 5 s) stays per provider. Unison and
+  LRCLIB keep their own cooldowns.
+- **No ids, so synthetic ones.** The API returns nothing to identify a version. `providerId` is `"q"` + the FNV-1a hash
+  of the query string, only so alternates, pins and cache rows can use `(provider, id)`. Fetching a pinned or alternate
+  Better Lyrics version repeats the lookup for the current track (a cache hit on their side) and keeps the stored id.
+  Consequence: "Try next match" cannot reach a *different* version from this API, only a different provider's.
+- **Request.** `s`, `a`, `al`, `d`, each once under its short name (the server concatenates aliases). Never `videoId`:
+  it makes their server record a video-to-song link from our cleaned metadata. No `X-API-Key`.
+- **Ranking.** Unchanged `rank()`: `matchedBy: "signature"`. The API's `score` is ignored (absent on cache hits; the
+  server applies its own minimum). The three count as duration-checked on the server (`SERVER_MATCHED`), like Unison.
+- **QRC parser** (`qrc.mjs`): the Go source of the API's QQ provider and a live sample define the format. Word timing
+  follows the word it describes; spaces stay with the word before; `(` that is not a `(start,dur)` group stays text
+  (scanned linearly, no backtracking regex; lines over 20000 chars are skipped). The XML wrapper is unwrapped with
+  `xml-lite`; text with LRC tags and no QRC lines falls back to `parseLrc`. A kugou body is LRC (`[Instrumental Only]`
+  → instrumental; no time tags → plain).
+- **Credits.** "Lyrics from <label>" linked to `https://better-lyrics.boidu.dev` (the site the docs ask apps to link),
+  from constants only. That host is in `LyricsFooter.isSafeUrl` but **not** in `ALLOWED_HOSTS`: it is opened in the
+  browser, never requested. `api.betterlyrics.org` is in `ALLOWED_HOSTS`.
+- **Config page.** Five checkboxes plus an "Ask first" combo box replace "Ask Unison first". The saved value is still an
+  ordered comma list: `[preferred, ...other enabled in canonical order]`; only the first position changes ranking
+  (`RANK_PROVIDER_FIRST`), as before. Old values (`unison,lrclib`) parse unchanged.
+- **Tests.** Live samples were probed with `tools/probe-apis.mjs --only betterlyrics` and scrubbed by `tools/scrub.mjs`
+  (QRC words scrubbed inside the wrapper attribute); the 404/429/503 fixtures are hand-written from the docs and say so.
+  The existing resolver cases are pinned to `["lrclib","unison"]` in their harness so they keep testing what they were
+  written for; the new cases pass `providers` explicitly. `tests/qml/tst_configpage.qml` builds the real config page, so it
+  runs against real Plasma modules only (skipped when the stubs are in use).

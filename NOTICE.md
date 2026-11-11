@@ -15,6 +15,9 @@ upstream git history is preserved in this repository. Upstream's files keep thei
   used as a development-only test oracle (differential tests). It is not shipped.
 - **Unison** server — https://github.com/better-lyrics/unison — AGPL-3.0. Read only to understand the
   API's behaviour. **No Unison code is copied into Lirik.**
+- **Better Lyrics API** server — https://github.com/better-lyrics/api — GPL-3.0. Read only (its OpenAPI
+  document and provider sources) to understand the API's behaviour and the QRC lyric format. **No code is copied
+  into Lirik.**
 - **Lyricsfile 1.0 draft** — https://github.com/tranxuanthang/lyricsfile.
 
 ## Lyrics providers
@@ -22,6 +25,9 @@ upstream git history is preserved in this repository. Upstream's files keep thei
 - **LRCLIB** — https://lrclib.net
 - **Unison** by Better Lyrics — https://unison.betterlyrics.org. Lyrics shown from Unison are credited
   in the widget to Unison and to the community member who submitted them.
+- **Better Lyrics API** (Better Lyrics, Kugou and QQ endpoints) — https://api.betterlyrics.org, docs at
+  https://docs.betterlyrics.org. Lyrics shown from it are credited in the widget to the endpoint's name, linked to
+  https://better-lyrics.boidu.dev.
 
 Lyrics are the property of their respective owners. This repository contains only synthetic
 placeholder text in its test fixtures.

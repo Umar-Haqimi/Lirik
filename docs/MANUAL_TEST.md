@@ -42,7 +42,7 @@ Run from a checkout of this repository.
   the other's.
 - [ ] Upstream parity: in Lirik's settings, Lyrics, switch **Enable lyrics** off. Panel and full view look and
   behave like upstream next to it (same text, same icons, same click behaviour). No network traffic to
-  lrclib.net / unison.betterlyrics.org (e.g. watch with `ss -tnp` or your firewall log).
+  lrclib.net / unison.betterlyrics.org / api.betterlyrics.org (e.g. watch with `ss -tnp` or your firewall log).
 
 ## 2. Per player
 
@@ -63,6 +63,10 @@ one local player (Elisa, VLC or mpv) with a tagged file. For each:
   pages in the browser; sync badge matches (Word/Line/Unsynced); offset buttons, click-to-reset, and the
   menu (Try next match, Refetch, Hide lyrics for this track) work and open **upwards**.
 - [ ] A track with no lyrics shows the "not found" state; an instrumental shows the instrumental state.
+- [ ] Better Lyrics API: with only **Better Lyrics** ticked, a popular song gives word- or line-synced lyrics and the
+  footer says "Lyrics from Better Lyrics" (link opens https://better-lyrics.boidu.dev); an obscure song is "not
+  found". Tick **Kugou (Better Lyrics)** / **QQ (Better Lyrics)** too: they appear in **Ask first**, picking one
+  moves it to the front, and the choice survives closing and reopening Settings.
 
 ## 3. Once each
 

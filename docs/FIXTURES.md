@@ -32,6 +32,12 @@ layout.
 | `unison-id-lrc-linesync.json` | lrc line timing |
 | `unison-id-lrc-richsync.json` | enhanced LRC with word tags + trailing end tag |
 | `unison-id-plain-plain.json` | plain |
+| `betterlyrics-ttml.json` | `/getLyrics` 200 `{ttml}`, word timing, translations metadata (live, scrubbed) |
+| `betterlyrics-kugou-lrc.json` | `/kugou/getLyrics` 200 `{lyrics, provider}`, LRC (live, scrubbed) |
+| `betterlyrics-qq-qrc-xml.json` | `/qq/getLyrics` 200, QRC inside the decrypted XML wrapper (live, scrubbed) |
+| `betterlyrics-401-uncached.json`, `betterlyrics-kugou-401-uncached.json` | `401` "API key required" for a song that is not cached (live; kugou/qq are not exempt) |
+| `betterlyrics-422-noquery.json` | `422` text body when neither song nor artist is sent (live) |
+| `betterlyrics-404.json`, `betterlyrics-429-text.json`, `betterlyrics-429-json.json`, `betterlyrics-503-cacheonly.json` | **hand-written** from docs.betterlyrics.org and the OpenAPI document (their `source` says so): negative cache hit, both rate-limit tiers (`Retry-After` 1 and 60), cache-only mode |
 
 ## `tests/fixtures/lrc/`
 
@@ -49,6 +55,18 @@ layout.
 | `crlf-bom.lrc` | CRLF line endings and a UTF-8 BOM |
 | `brackets.lrc` | text containing `[brackets]` (`[Chorus]` after a time tag, mid-line, at the end) |
 | `html.lrc` | markup in text stays literal (`<img>`, `<a>`, `<b>`, `&`) |
+
+## `tests/fixtures/qrc/`
+
+Synthetic QRC (QQ word-timed lyrics), `[startMs,durMs]word(startMs,durMs)…`.
+
+| File | Covers |
+| --- | --- |
+| `basic.qrc` | ID tags, three word-timed lines, spaces kept with the word before them |
+| `wrapped.qrc` | the same lyrics inside the XML wrapper (`LyricContent` attribute with raw newlines) |
+| `no-word-timing.qrc` | timed lines without word timing (line sync) |
+| `parens.qrc` | parentheses that are lyric text, not timing groups |
+| `junk.qrc` | ID tag, a line without timing, malformed and empty timed lines (no lyrics) |
 
 ## `tests/fixtures/lyricsfile/`
 

@@ -13,7 +13,7 @@ Lirik is a fork of [PlasMusic Toolbar](https://github.com/ccatterina/plasmusic-t
 
 1. **Panel (compact) mode.** The text slot shows title/artist until the first lyric line starts, then the current lyric line. It falls back to title/artist during long instrumental gaps and after the last line. Word-synced lyrics get a karaoke wipe.
 2. **Full view (popup, or widget on the desktop).** The upstream player plus a lyrics side panel on the left or right (or hidden). It auto-scrolls, highlights the active line and word, and seeks when a line is clicked.
-3. **Lyrics engine.** Looks up the current MPRIS track on LRCLIB and Unison, picks the best result (word > line > plain), caches it in SQLite, and tracks playback position by interpolation.
+3. **Lyrics engine.** Looks up the current MPRIS track on LRCLIB, Unison and the Better Lyrics API (§2.1i), picks the best result (word > line > plain), caches it in SQLite, and tracks playback position by interpolation.
 
 **Platform:** KDE Plasma 6 plasmoid (`Plasma/Applet` kpackage), pure QML + JavaScript, no compiled code.
 
@@ -25,7 +25,7 @@ Lirik is a fork of [PlasMusic Toolbar](https://github.com/ccatterina/plasmusic-t
 **Non-goals (v1):**
 - Submitting, editing, voting on or reporting lyrics (Unison writes need ECDSA-signed requests).
 - Rendering translations or romanization (parse and keep them in the model; do not draw them — extension point).
-- Providers other than LRCLIB and Unison (keep the provider interface clean for more).
+- Providers other than LRCLIB, Unison and the Better Lyrics API endpoints (§2.1i) (keep the provider interface clean for more).
 - Local `.lrc` sidecar files, Plasma 5, a C++ plugin, a free-floating desktop-lyrics overlay.
 - Translating new strings (they must be `i18n()`-wrapped, English only).
 
@@ -160,6 +160,20 @@ plain: |
 - Whether `org.kde.plasma.workspace.dbus` imports on this Plasma (needed only for N1).
 - Whether Breeze has the icon `view-media-lyrics`; pick a fallback if not.
 - Whether `plasmoidviewer` and `grabToImage` work under `QT_QPA_PLATFORM=offscreen` (decides how smoke runs and snapshots are produced).
+
+**i) Better Lyrics API** — base `https://api.betterlyrics.org` (GPL-3.0 server, `github.com/better-lyrics/api`; docs `https://docs.betterlyrics.org`). Added after v1.0.0; see docs/DECISIONS.md D24. Reads need no key. Three endpoints, each a separate selectable provider:
+
+| Provider id | Call | Response | Lyrics |
+| --- | --- | --- | --- |
+| `betterlyrics` ("Better Lyrics", **on by default**) | `GET /getLyrics` | `{ "ttml": "<tt …>", "score"?: 0..1 }` | Apple-style TTML, word or line timing (the dialect in §2.1g) |
+| `kugou` ("Kugou (Better Lyrics)", opt-in) | `GET /kugou/getLyrics` | `{ "lyrics": "[mm:ss.xx]…", "provider": "kugou" }` | LRC, line timing; `[Instrumental Only]` for an instrumental |
+| `qq` ("QQ (Better Lyrics)", opt-in) | `GET /qq/getLyrics` | `{ "lyrics": "…", "provider": "qq" }` | QRC with word timing, `[startMs,durMs]word(startMs,durMs)…`, usually inside the decrypted XML wrapper (`<QrcInfos>…<Lyric_1 LyricContent="…"/>`); plain LRC for some songs |
+
+- Query: `s` (song), `a` (artist), `al` (album), `d` (duration, whole seconds). Send each **once** under its short name: the server concatenates aliases when several are sent. We never send `videoId` / `v` (it records a video-to-song link on their server).
+- **No ids, no ETags, nothing echoed back** (no title, artist or duration in the response). The server matches by title / artist / duration itself, with a duration tolerance, so the resolver treats the duration as server-checked (`SERVER_MATCHED`). `score` (fresh fetches only) is ignored.
+- **Cache-only in practice.** Fetching a song they do not have needs an `X-API-Key`, which is not being issued. An uncached song answers **`401`** `{"error":"API key required",…}` on **every** endpoint, kugou and qq included (verified live 2026-11-11; the docs claim those two never need a key). We map `401` to "not found" (cached 6 h, so a song that reaches their cache later is picked up). `404` = no lyrics (cached negative), `422` = no song and no artist sent (text body), `503` = server in cache-only mode (temporary: an error, not cached), `500` = upstream failure.
+- Rate limit: one per-IP limiter for the whole API, burst 15 (`X-RateLimit-Limit`), refilling over time. `429` carries `Retry-After`: `1` (text body) when both tiers are used up, `60` (JSON) when only cached answers are served and the query is not cached. The three endpoints share one cooldown, which is why kugou and qq are opt-in (they triple the requests per track).
+- **Attribution:** the docs ask apps to link the Better Lyrics site. The credit is "Lyrics from <label>" linking `https://better-lyrics.boidu.dev`, built from our constants only (§6). Check docs.betterlyrics.org for changes to this ask.
 
 ### 2.2 Compatibility traps ⚠️
 
@@ -296,11 +310,11 @@ State machine and exact copy:
 | `skipped` | "Lyrics are off for this track" + **Look up anyway** |
 | no media | panel empty |
 
-Credit text: LRCLIB → "Lyrics from LRCLIB" linking `https://lrclib.net`. Unison → "Lyrics from Unison" and the submitter name, linked as §2.1f requires.
+Credit text: LRCLIB → "Lyrics from LRCLIB" linking `https://lrclib.net`. Unison → "Lyrics from Unison" and the submitter name, linked as §2.1f requires. Better Lyrics / Kugou (Better Lyrics) / QQ (Better Lyrics) → "Lyrics from <name>" linking `https://better-lyrics.boidu.dev` (§2.1i).
 
 ### 4.3 Config page "Lyrics"
 
-A fourth `ConfigCategory` built like upstream's pages (`KCM.SimpleKCM`, `Kirigami.FormLayout`, `cfg_` aliases). Sections: **Sources** (enable lyrics, provider checkboxes + order, global offset with a hint that delayed audio such as Bluetooth needs a positive value), **Panel**, **Full view**, **Filtering**, **Cache & privacy** (entry count, Clear cache, and the sentence "Track title, artist, album and duration are sent to the enabled providers.").
+A fourth `ConfigCategory` built like upstream's pages (`KCM.SimpleKCM`, `Kirigami.FormLayout`, `cfg_` aliases). Sections: **Sources** (enable lyrics, one checkbox per provider (LRCLIB, Unison, Better Lyrics, Kugou (Better Lyrics), QQ (Better Lyrics)) and an "Ask first" box that picks the provider asked first (the saved list is ordered, first = asked first), global offset with a hint that delayed audio such as Bluetooth needs a positive value), **Panel**, **Full view**, **Filtering**, **Cache & privacy** (entry count, Clear cache, and the sentence "Track title, artist, album and duration are sent to the enabled providers.").
 
 **Localization:** every new string goes through `i18n()` / `i18nc()`. Run `bin/i18n extract` so `template.pot` stays current. No new translations in v1.
 
@@ -397,6 +411,7 @@ frame(lyrics, tMs, opts) → { state, active: number[], primary, upcoming,
 5. Query enabled providers in parallel, at most one in-flight request per provider:
    - **LRCLIB:** `get` (full artist string, album if present, duration if known) → on 404 `v2/search` with `titleAlt` + `primaryArtist` → best candidate by `match.mjs` → `get/{id}`. Fall back to v1 `search` if the v2 shape is unexpected.
    - **Unison:** one `GET /lyrics` with `v` (if known) + `song` + `artist` + `album` + `duration`.
+   - **Better Lyrics API** (`betterlyrics`, `kugou`, `qq`): one `GET` each with `s` + `a` + `al` + `d` (§2.1i). `401` is a not-found; a `429` pauses all three.
 6. **Progressive display:** show the first acceptable result at once. If the other provider returns a strictly higher sync tier within 2500 ms, swap to it; otherwise never swap mid-song.
 7. **Rank:** tier (word 300, line 200, plain 100) + match (`id` 30, `signature` 20, `search` 10 × similarity) + provider order (first 5) + Unison confidence (high 3, medium 1). LRCLIB `instrumental: true` wins only when no provider returned synced lyrics.
 8. **Search acceptance** (`match.mjs`): title similarity ≥ 0.85, artist overlap ≥ 0.6, and duration within 10 s when both are known (≤ 2 s scores 1.0, ≤ 5 s 0.7, ≤ 10 s 0.3).
@@ -449,7 +464,7 @@ CREATE TABLE IF NOT EXISTS track_prefs (
 ## 6. Security, privacy and licensing requirements
 
 - **No process execution.** No `executable` data engine, no `Plasma5Support` data sources. Test: grep finds none in files we added or changed.
-- **Network allow-list.** `Http.qml` only sends HTTPS requests to `lrclib.net` and `unison.betterlyrics.org`. `http://127.0.0.1:<port>` is allowed only while `lyricsDevBaseUrl` is set. Test: any other host is refused before a request is made.
+- **Network allow-list.** `Http.qml` only sends HTTPS requests to `lrclib.net`, `unison.betterlyrics.org` and `api.betterlyrics.org`. `better-lyrics.boidu.dev` is only a credit link opened in the browser, never requested. `http://127.0.0.1:<port>` is allowed only while `lyricsDevBaseUrl` is set. Test: any other host is refused before a request is made.
 - **Data leaving the machine:** title, artist, album, duration, and a YouTube video id when derivable. Never file paths, local URLs, usernames, or anything else from metadata.
 - **Untrusted input caps:** response body ≤ 1 MB; ≤ 2000 lines; ≤ 200 words per line; line text ≤ 500 chars; XML depth ≤ 32; YAML depth ≤ 8. Parsers return `{ ok: false, error }` and never throw past their boundary. No regex with catastrophic backtracking; the fuzz test enforces a time budget.
 - **Plain-text rendering** of all provider strings (trap 14). Test: a fixture containing `<img src=x>` and `<a href=x>` renders literally.
@@ -582,7 +597,7 @@ Work milestone by milestone. At the end of each one: **`./tools/dev.sh check` pa
 | Repository URL (goes into `metadata.json` and the User-Agent) | `https://github.com/Umar-Haqimi/lirik` |
 | Fork or write from scratch? | **Fork** plasmusic-toolbar at `0e78da1`, keeping git history. Fastest route to "the same style", and it obliges the project to stay GPL-3.0. |
 | Offer the feature upstream instead? | Not in v1. The minimal-diff rule keeps a later upstream PR possible. |
-| Providers | LRCLIB + Unison, LRCLIB first in the order. Others wait for N8. |
+| Providers | LRCLIB + Unison, LRCLIB first in the order. Better Lyrics API (`betterlyrics` on by default, `kugou` and `qq` opt-in) added after v1.0.0 (D24). Others wait for N8. |
 | Which result wins | Best sync tier first (word > line > plain), then match quality, then provider order. |
 | Exact-id lookups (Spotify / YouTube ids) | Deferred to N1; v1 matches on title + artist + album + duration, plus a YouTube id when the cover-art URL reveals one. |
 | Long-gap threshold | 8 s, configurable 3–30 s. |
