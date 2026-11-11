@@ -12,8 +12,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 die() { echo "package: $*" >&2; exit 1; }
-command -v zip >/dev/null 2>&1 || die "zip is not installed"
 command -v unzip >/dev/null 2>&1 || die "unzip is not installed"
+command -v zip >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1 || die "neither zip nor python3 is installed"
 
 ver="$(node -e "console.log(require('./src/metadata.json').KPlugin.Version)")"
 [ -n "$ver" ] || die "no KPlugin.Version in src/metadata.json"
@@ -27,7 +27,22 @@ trap cleanup EXIT
 
 rm -f "$out"
 bin/i18n compile >/dev/null
-(cd src && zip -qrX "../$out" . -x '*.swp' -x '*~' -x '.*' -x '*/.*')
+if command -v zip >/dev/null 2>&1; then
+    (cd src && zip -qrX "../$out" . -x '*.swp' -x '*~' -x '.*' -x '*/.*')
+else
+    (cd src && python3 -c '
+import os, zipfile, sys
+with zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED) as z:
+    for root, dirs, files in os.walk("."):
+        dirs[:] = sorted([d for d in dirs if not d.startswith(".")])
+        for f in sorted(files):
+            if f.startswith(".") or f.endswith(".swp") or f.endswith("~"):
+                continue
+            p = os.path.join(root, f)
+            arc = os.path.relpath(p, ".")
+            z.write(p, arc)
+' "../$out")
+fi
 
 listing="$(unzip -Z1 "$out")"
 if echo "$listing" | grep -vE '^(metadata\.json|contents/.*|translate/.*)?$'; then

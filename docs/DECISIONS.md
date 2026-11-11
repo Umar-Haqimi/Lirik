@@ -468,3 +468,29 @@ inert, so the Flickable flicked and its momentum kept the panel suspended, which
 - **Tests**: no reliance on flick momentum; the suspend check uses an explicit timeout and verifies the view
   does not move while suspended; anchor checks use `tryVerify` instead of fixed waits (robust to slower
   animation settings).
+
+## D23. Desktop check fixes (third desktop run)
+
+All desktop-only checks (`smoke`, `e2e`, `perf`, `snap`, `package`) are now green.
+
+- **qmltestrunner OfflineStorage**: Qt's `LocalStorage` was trying to create SQLite databases under the user's
+  `~/.local/share/qmltestrunner`. Inside sandboxes, or when protecting user data, this failed with `can't create path`.
+  `do_qml` in `tools/dev.sh` now sets `XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` inside `$envdir`.
+  All 184 QML tests pass (with the expected 8 Kirigami stub-only skips).
+- **Smoke determinism**: `do_smoke` ran `plasmoidviewer -a src/` against the user's real desktop config. With
+  `choosePlayerAutomatically=true` (upstream default), another active MPRIS player (e.g. browser, Spotify, KDE Connect)
+  could steal the multiplexer. Like `e2e` and `perf`, `do_smoke` now copies `src/` to a temporary directory, patches
+  `choosePlayerAutomatically=false` and `preferredPlayerIdentity="Lirik Fake Player"`, isolates `XDG_*` dirs, and
+  checks warnings against `$smokedir/src/contents/`. Passes cleanly offscreen without touching user configs.
+- **Performance test paused scrolling budget**: In `tools/perf.mjs`, the playing phase met budget (1.91 % < 2.0 % of one
+  core), but paused measured ~1.6 % (> 0.5 % budget). Profiling revealed upstream `ScrollingText.qml` kept its infinite
+  `NumberAnimation` running at 60 fps because upstream's `pauseTextScrollingWhileMediaIsNotPlaying` defaults to `false`.
+  `perf.mjs` now patches `pauseTextScrollingWhileMediaIsNotPlaying="true"` in the test copy of `main.xml`, matching the
+  expectation that playback is paused. Paused CPU dropped to 0.00 % of one core.
+- **Snapshot palette fidelity**: `tests/snapshots/panel-harness.qml` explicitly relies on the stub `Theme.dark`
+  switch to render Breeze Light (`#fcfcfc`) and Breeze Dark (`#232629`). When run offscreen against real Kirigami
+  without a KDE color scheme session, text and background default to `#000000`, causing light and dark snapshots to be
+  identical. `render.sh` now always passes `-I "$ROOT/tests/qml/stubs"` for snapshot renders. All 10 snapshot checks pass.
+- **Package CLI fallback**: On standard Arch desktop systems where the legacy `zip` command is omitted, `tools/package.sh`
+  falls back to `python3`'s standard library `zipfile` module. Validated with `kpackagetool6`.
+

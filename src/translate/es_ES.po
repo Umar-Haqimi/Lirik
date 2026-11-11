@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: plasmusic-toolbar\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-10 23:10+0000\n"
+"POT-Creation-Date: 2026-11-11 09:23+0800\n"
 "PO-Revision-Date: 2026-05-03 14:58+0200\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -37,33 +37,33 @@ msgstr "Vista completa"
 msgid "Lyrics"
 msgstr ""
 
-#: src/contents/ui/Full.qml:162
+#: src/contents/ui/Full.qml:164
 #, kde-format
 msgctxt "@action:button"
 msgid "Choose player automatically"
 msgstr ""
 
-#: src/contents/ui/Full.qml:192
+#: src/contents/ui/Full.qml:194
 #, kde-format
 msgid "Bring player to the front"
 msgstr "Traer reproductor al frente"
 
-#: src/contents/ui/Full.qml:192 src/contents/ui/main.qml:32
+#: src/contents/ui/Full.qml:194 src/contents/ui/main.qml:32
 #, kde-format
 msgid "This player can't be raised"
 msgstr "Este reproductor no puede ser mostrado"
 
-#: src/contents/ui/Full.qml:286
+#: src/contents/ui/Full.qml:288
 #, kde-format
 msgid "Click to copy the track info"
 msgstr ""
 
-#: src/contents/ui/Full.qml:384
+#: src/contents/ui/Full.qml:386
 #, kde-format
 msgid "Hide lyrics"
 msgstr ""
 
-#: src/contents/ui/Full.qml:384
+#: src/contents/ui/Full.qml:386
 #, kde-format
 msgid "Show lyrics"
 msgstr ""
@@ -846,135 +846,150 @@ msgctxt "@label offset in seconds"
 msgid "%1 s"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsFooter.qml:128
-#, kde-format
-msgctxt "@info credit prefix, followed by the provider name"
-msgid "Lyrics from"
-msgstr ""
-
-#: src/contents/ui/lyrics/LyricsFooter.qml:142
+#: src/contents/ui/lyrics/LyricsFooter.qml:73
 #, kde-format
 msgctxt ""
-"@info separates the provider from the submitter's name, e.g. \"Lyrics from "
-"Unison, submitted by Alice\""
-msgid "submitted by"
+"@info credit line; %1 is the lyrics provider, %2 the person who submitted "
+"them"
+msgid "Lyrics from %1, submitted by %2"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsFooter.qml:209
+#: src/contents/ui/lyrics/LyricsFooter.qml:74
+#, kde-format
+msgctxt "@info credit line; %1 is the lyrics provider"
+msgid "Lyrics from %1"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:232
 #, kde-format
 msgctxt "@action:button"
 msgid "Show lyrics earlier"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsFooter.qml:213
+#: src/contents/ui/lyrics/LyricsFooter.qml:237
 #, kde-format
 msgid "Lyrics earlier by 0.1 s (Shift: 0.5 s)"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsFooter.qml:234
+#: src/contents/ui/lyrics/LyricsFooter.qml:259
+#, kde-format
+msgid "Reset the offset"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsFooter.qml:265
 #, kde-format
 msgid "Click to reset the offset"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsFooter.qml:243
+#: src/contents/ui/lyrics/LyricsFooter.qml:275
 #, kde-format
 msgctxt "@action:button"
 msgid "Show lyrics later"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsFooter.qml:247
+#: src/contents/ui/lyrics/LyricsFooter.qml:280
 #, kde-format
 msgid "Lyrics later by 0.1 s (Shift: 0.5 s)"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsFooter.qml:260
+#: src/contents/ui/lyrics/LyricsFooter.qml:294
 #, kde-format
 msgctxt "@action:button"
 msgid "Lyrics options"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsFooter.qml:275
+#: src/contents/ui/lyrics/LyricsFooter.qml:310
 #, kde-format
 msgid "Try next match"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsFooter.qml:281
+#: src/contents/ui/lyrics/LyricsFooter.qml:316
 #, kde-format
 msgid "Refetch"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsFooter.qml:286
+#: src/contents/ui/lyrics/LyricsFooter.qml:321
 #, kde-format
 msgid "Hide lyrics for this track"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsPanel.qml:95
+#: src/contents/ui/lyrics/LyricsPanel.qml:100
 #, kde-format
-msgid "The provider took too long to answer"
+msgctxt "@info generic provider name"
+msgid "the lyrics provider"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsPanel.qml:96
+#: src/contents/ui/lyrics/LyricsPanel.qml:103
 #, kde-format
-msgid "The provider answered with an error"
+msgctxt "@info tooltip; %1 is a lyrics provider"
+msgid "%1 did not answer in time"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsPanel.qml:97
+#: src/contents/ui/lyrics/LyricsPanel.qml:104
 #, kde-format
-msgid "Couldn't connect to the provider"
+msgctxt "@info tooltip; %1 is a lyrics provider, %2 an HTTP status code"
+msgid "%1 answered with HTTP %2"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsPanel.qml:98
+#: src/contents/ui/lyrics/LyricsPanel.qml:105
+#, kde-format
+msgctxt "@info tooltip; %1 is a lyrics provider"
+msgid "Could not connect to %1"
+msgstr ""
+
+#: src/contents/ui/lyrics/LyricsPanel.qml:106
 #, kde-format
 msgid "The lookup failed"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsPanel.qml:100
+#: src/contents/ui/lyrics/LyricsPanel.qml:108
 #, kde-format
+msgctxt "@info tooltip: message, then technical detail"
 msgid "%1 (%2)"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsPanel.qml:272
-#: src/contents/ui/lyrics/LyricsPanel.qml:425
+#: src/contents/ui/lyrics/LyricsPanel.qml:327
+#: src/contents/ui/lyrics/LyricsPanel.qml:498
 #, kde-format
 msgid "Lyrics providers are busy. Retrying in %1 s"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsPanel.qml:421
+#: src/contents/ui/lyrics/LyricsPanel.qml:494
 #, kde-format
 msgid "Looking for lyrics…"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsPanel.qml:422
+#: src/contents/ui/lyrics/LyricsPanel.qml:495
 #, kde-format
 msgid "♪ Instrumental"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsPanel.qml:423
+#: src/contents/ui/lyrics/LyricsPanel.qml:496
 #, kde-format
 msgid "No lyrics found for this track"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsPanel.qml:424
+#: src/contents/ui/lyrics/LyricsPanel.qml:497
 #, kde-format
 msgid "Couldn't reach the lyrics providers"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsPanel.qml:426
+#: src/contents/ui/lyrics/LyricsPanel.qml:499
 #, kde-format
 msgid "Lyrics are off for this track"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsPanel.qml:436
+#: src/contents/ui/lyrics/LyricsPanel.qml:509
 #, kde-format
 msgid "Retry"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsPanel.qml:445
+#: src/contents/ui/lyrics/LyricsPanel.qml:519
 #, kde-format
 msgid "Look up anyway"
 msgstr ""
 
-#: src/contents/ui/lyrics/LyricsPanel.qml:465
+#: src/contents/ui/lyrics/LyricsPanel.qml:541
 #, kde-format
 msgctxt "@action:button jump back to the line being sung"
 msgid "Resume"

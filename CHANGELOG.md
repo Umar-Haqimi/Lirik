@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.0.0](https://github.com/Umar-Haqimi/Lirik/releases/tag/v1.0.0) (2026-11-11)
+
+First release of Lirik, a fork of [PlasMusic Toolbar](https://github.com/ccatterina/plasmusic-toolbar) 4.3.1 that
+adds time-synced lyrics. With lyrics switched off it behaves like upstream and installs alongside it under its own
+plugin id (`my.umarh.lirik`).
+
+### Features
+
+* **Panel karaoke:** the current lyric line replaces the song text in the panel, with a word-level wipe for
+  word-synced lyrics and a pan for line-synced ones; title and artist return during gaps of 8 s or more
+  (configurable), before the first line and after the last.
+* **Side panel in the full view:** scrolling lyrics with per-word highlight, overlapping vocals, a gap indicator,
+  click a line to seek, manual scroll pauses following; placed left, right or hidden, with a toggle button.
+* **Footer:** provider credits with links (Unison credits the submitter too), sync badge, per-track timing
+  offset, try the next match, refetch, hide lyrics for this track.
+* **Providers:** LRCLIB (LRC, word-synced Lyricsfile, plain, instrumental) and Unison (TTML syllable and line,
+  enhanced LRC, plain), in either order; the best sync tier wins, then match quality, then provider order.
+  Candidates more than 10 s off the track length are never shown.
+* **Parsers:** LRC and enhanced LRC, Lyricsfile 1.0, TTML, a YAML subset and an XML tokenizer, all written for
+  the Plasma QML engine and checked against Braccato and the `yaml` package in differential tests.
+* **Playback clock:** interpolated position that survives pause, seek, track change and non-1.0 rate, with a
+  global and a per-track offset.
+* **Cache:** found and not-found lookups, per-track offset, hide and pinned-version choices stored locally in
+  SQLite (Qt LocalStorage) with TTLs, a size cap and a clear button.
+* **Polite networking:** identifying `User-Agent` and `Lrclib-Client` headers, adaptive debounce, at most two
+  lookups per provider in five seconds, `Retry-After` honoured, requests aborted on track change, lookups
+  skipped for very short or very long media and for excluded players.
+* **"Lyrics" settings page** covering providers, panel and side-panel behaviour, karaoke, gap threshold,
+  alignment, font scale, track-length limits, excluded players and the cache.
+* **Accessibility and locale:** keyboard seek and focusable links in the side panel, CJK and RTL karaoke,
+  animations-off mode, translated UI strings (es, fr, it, nl, pt_BR, tr, uk, zh_CN).
+
+### Bug Fixes
+
+* Credit line keeps its provider and submitter links in translated locales (placeholders were split before
+  translation).
+* Side panel re-follows the current line after Kirigami's smooth scroll settles, and resumes following after a
+  pause without a stale target.
+
+### Upstream
+
+Everything below this line is the history of PlasMusic Toolbar up to the fork point (4.3.1).
+
 ## [4.3.1](https://github.com/ccatterina/plasmusic-toolbar/compare/v4.3.0...v4.3.1) (2026-08-09)
 
 

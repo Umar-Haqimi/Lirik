@@ -17,7 +17,7 @@
         "Id": "my.umarh.lirik",
         "License": "GPL3",
         "Name": "Lirik",
-        "Version": "0.1.0",
+        "Version": "1.0.0",
         "Category": "Multimedia"
     },
     "X-Plasma-API-Minimum-Version": "6.0.4",

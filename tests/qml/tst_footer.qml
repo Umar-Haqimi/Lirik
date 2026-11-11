@@ -14,7 +14,7 @@ TestCase {
     function i18n(fmt) {
         let s = String(fmt)
         for (let i = 1; i < arguments.length; i++) s = s.replace("%" + i, String(arguments[i]))
-        return s
+        return s.replace(/%[0-9]+/g, function (m) { return m + "(I18N_ARGUMENT_MISSING)" })
     }
     function i18nc(ctx, fmt) {
         const a = [fmt]
@@ -137,11 +137,15 @@ TestCase {
         compare(footer.creditPieces.length, 2)
         compare(footer.creditPieces[0].text, "Lyrics from ")
         compare(footer.creditPieces[1].link, 0)
+        let s0 = ""
+        for (let j = 0; j < footer.creditPieces.length; j++) s0 += footer.creditPieces[j].text
+        verify(s0.indexOf("(I18N_ARGUMENT_MISSING)") === -1)
         footer.credits = [{ text: "Unison", url: "https://unison.betterlyrics.org/song/a" },
                           { text: "Alice", url: "https://unison.betterlyrics.org/curator/k" }]
         let s = ""
         for (let i = 0; i < footer.creditPieces.length; i++) s += footer.creditPieces[i].text
         compare(s, "Lyrics from Unison, submitted by Alice")
+        verify(s.indexOf("(I18N_ARGUMENT_MISSING)") === -1)
     }
 
     function test_links_activate_from_the_keyboard() {

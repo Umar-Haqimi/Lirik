@@ -67,16 +67,18 @@ Item {
     readonly property var creditPieces: {
         const links = root.creditLinks
         if (links.length === 0) return []
+        const tok1 = "\u001f1\u001f"
+        const tok2 = "\u001f2\u001f"
         const fmt = links.length > 1
-            ? i18nc("@info credit line; %1 is the lyrics provider, %2 the person who submitted them", "Lyrics from %1, submitted by %2")
-            : i18nc("@info credit line; %1 is the lyrics provider", "Lyrics from %1")
-        const parts = String(fmt).split(/(%[12])/)
+            ? i18nc("@info credit line; %1 is the lyrics provider, %2 the person who submitted them", "Lyrics from %1, submitted by %2", tok1, tok2)
+            : i18nc("@info credit line; %1 is the lyrics provider", "Lyrics from %1", tok1)
+        const parts = String(fmt).split(/(\u001f[12]\u001f)/)
         const out = []
         for (let i = 0; i < parts.length; i++) {
             const p = parts[i]
             if (p === "") continue
-            if (p === "%1" || p === "%2") {
-                const k = p === "%1" ? 0 : 1
+            if (p === tok1 || p === tok2) {
+                const k = p === tok1 ? 0 : 1
                 if (k < links.length) out.push({ text: links[k].text, link: k })
             } else {
                 out.push({ text: p, link: -1 })
