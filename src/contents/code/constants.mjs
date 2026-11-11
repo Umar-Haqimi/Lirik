@@ -92,7 +92,7 @@ export const BETTERLYRICS_SITE = "https://better-lyrics.boidu.dev" // credit lin
 export const ALLOWED_HOSTS = ["lrclib.net", "unison.betterlyrics.org", "api.betterlyrics.org"]
 // One entry per selectable provider. betterlyrics / kugou / qq are three endpoints of the same API.
 export const PROVIDER_NAMES = ["lrclib", "unison", "betterlyrics", "kugou", "qq"]
-export const DEFAULT_PROVIDERS = "lrclib,unison,betterlyrics" // kugou and qq are opt-in
+export const DEFAULT_PROVIDERS = "betterlyrics,unison,lrclib,qq,kugou" // all five on, Better Lyrics first (D26)
 export const PROVIDER_LABELS = {
     lrclib: "LRCLIB", unison: "Unison", betterlyrics: "Better Lyrics",
     kugou: "Kugou (Better Lyrics)", qq: "QQ (Better Lyrics)",

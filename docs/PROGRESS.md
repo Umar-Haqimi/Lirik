@@ -104,9 +104,11 @@ Milestones from `docs/SPEC.md` §8. Each one ends with `./tools/dev.sh check` gr
 
 - Covers the four commits after 1.0.0 up to 9364ec2: Better Lyrics API providers (D24) and the drag-and-drop
   provider priority list with strict order (D25).
+- Default provider list changed before release (D26): all five on, `betterlyrics,unison,lrclib,qq,kugou`;
+  a new package test keeps the four copies of the default in sync.
 - Version bumped to 1.1.0 in `src/metadata.json`, `constants.mjs`, `package.json`, the release-please manifest and
   the docs. `lirik-1.1.0.plasmoid` built with `tools/package.sh` in the cloud container (69 files; kpackagetool6
-  validation not run there). Node suite green (540 tests, 3 skipped); QML tests not run in this session.
+  validation not run there). Node suite green (541 tests, 3 skipped); QML tests not run in this session.
 - `template.pot` and the `.po` files re-extracted (3 new untranslated strings per language, no translation lost);
   `bin/i18n check` passes.
 - `CHANGELOG.md` has the 1.1.0 section; the GitHub release body is `docs/releases/v1.1.0.md`. The 1.0.0 release

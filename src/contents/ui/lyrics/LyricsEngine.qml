@@ -19,7 +19,7 @@ QtObject {
     property bool surfaceVisible: false
 
     // config (bound to plasmoid.configuration by the host)
-    property string providers: "lrclib,unison,betterlyrics"
+    property string providers: "betterlyrics,unison,lrclib,qq,kugou"
     property bool providerOrderStrict: false
     property int minTrackS: 30
     property int maxTrackS: 900

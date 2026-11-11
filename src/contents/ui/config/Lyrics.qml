@@ -40,7 +40,7 @@ KCM.SimpleKCM {
 
     // "Defaults" button support (Plasma sets cfg_<key>Default when a page declares it).
     property bool cfg_lyricsEnabledDefault: true
-    property string cfg_lyricsProvidersDefault: "lrclib,unison,betterlyrics"
+    property string cfg_lyricsProvidersDefault: "betterlyrics,unison,lrclib,qq,kugou"
     property bool cfg_lyricsProviderOrderStrictDefault: false
     property int cfg_lyricsGlobalOffsetMsDefault: 0
     property bool cfg_lyricsInPanelDefault: true

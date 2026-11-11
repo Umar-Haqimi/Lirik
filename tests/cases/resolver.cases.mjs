@@ -1244,14 +1244,14 @@ cases.push({ name: "Unison receives the full artist string", fn: () => {
 
 const BL_ONLY = { providers: ["betterlyrics"] }
 
-cases.push({ name: "betterlyrics: default providers are lrclib, unison and betterlyrics; kugou and qq are opt-in", fn: () => {
+cases.push({ name: "betterlyrics: by default all five providers are asked (D26)", fn: () => {
     const env = world({}, { providers: undefined })
     lookup(env, TRACK, 100)
     assert.equal(count(env, "lrclib.get"), 1)
     assert.equal(count(env, "unison.lookup"), 1)
     assert.equal(count(env, "bl.lookup"), 1)
-    assert.equal(count(env, "kugou.lookup"), 0)
-    assert.equal(count(env, "qq.lookup"), 0)
+    assert.equal(count(env, "kugou.lookup"), 1)
+    assert.equal(count(env, "qq.lookup"), 1)
     const all = world({}, { providers: "kugou, qq, nope, betterlyrics, kugou" })
     lookup(all, TRACK, 100)
     assert.equal(count(all, "kugou.lookup"), 1)

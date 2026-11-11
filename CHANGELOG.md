@@ -8,8 +8,8 @@ list you sort by drag and drop.
 ### Features
 
 * **Better Lyrics API providers:** three new providers backed by `api.betterlyrics.org`, each with its own
-  checkbox: **Better Lyrics** (Apple-style TTML, word or line timing; on by default), **Kugou (Better Lyrics)**
-  (LRC) and **QQ (Better Lyrics)** (QRC with word timing), both opt-in. The API serves only songs it already has
+  checkbox: **Better Lyrics** (Apple-style TTML, word or line timing), **Kugou (Better Lyrics)** (LRC) and
+  **QQ (Better Lyrics)** (QRC with word timing). The API serves only songs it already has
   cached; its "API key required" answer (`401`) is treated as "not found" and retried after 6 h, while `503`
   (cache-only mode) is a temporary error and is not cached. The three share one rate-limit cooldown, and
   results are credited as "Lyrics from <name>" with a link to the Better Lyrics site.
@@ -18,6 +18,8 @@ list you sort by drag and drop.
 * **Provider priority list:** one draggable list on the Lyrics settings page (checkbox per row; Alt+Up / Alt+Down
   on a focused row) sets the order of all five providers. Unticked rows keep their place. The saved setting is the
   same ordered list as before, so existing configurations load unchanged.
+* **New default provider list:** all five providers are on, in the order Better Lyrics, Unison, LRCLIB, QQ,
+  Kugou.
 * **Strict order option:** "Always use the highest provider that has lyrics" makes the list position decide before
   sync quality, so plain lyrics from your first provider beat word-synced lyrics from a lower one. Off by default.
 
@@ -29,8 +31,9 @@ list you sort by drag and drop.
 ### Notes
 
 * An existing install that never changed the provider settings follows the new default
-  (`lrclib,unison,betterlyrics`) and starts sending lookups to `api.betterlyrics.org`. Untick **Better Lyrics** on
-  the Lyrics settings page to opt out. Installs with a saved provider list keep exactly that list.
+  (`betterlyrics,unison,lrclib,qq,kugou`) and starts sending lookups to `api.betterlyrics.org` (up to three per
+  track, one per Better Lyrics endpoint). Untick **Better Lyrics**, **QQ** and **Kugou** on the Lyrics settings page
+  to opt out. Installs with a saved provider list keep exactly that list.
 * Lyrics already in the cache are not re-ranked when you change the order; clear the cache to re-rank them.
 * New settings strings are not translated yet.
 

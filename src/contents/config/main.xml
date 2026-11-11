@@ -193,7 +193,7 @@
             <default>true</default>
         </entry>
         <entry name="lyricsProviders" type="String">
-            <default>lrclib,unison,betterlyrics</default>
+            <default>betterlyrics,unison,lrclib,qq,kugou</default>
         </entry>
         <entry name="lyricsProviderOrderStrict" type="Bool">
             <default>false</default>

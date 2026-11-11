@@ -165,14 +165,14 @@ plain: |
 
 | Provider id | Call | Response | Lyrics |
 | --- | --- | --- | --- |
-| `betterlyrics` ("Better Lyrics", **on by default**) | `GET /getLyrics` | `{ "ttml": "<tt …>", "score"?: 0..1 }` | Apple-style TTML, word or line timing (the dialect in §2.1g) |
-| `kugou` ("Kugou (Better Lyrics)", opt-in) | `GET /kugou/getLyrics` | `{ "lyrics": "[mm:ss.xx]…", "provider": "kugou" }` | LRC, line timing; `[Instrumental Only]` for an instrumental |
-| `qq` ("QQ (Better Lyrics)", opt-in) | `GET /qq/getLyrics` | `{ "lyrics": "…", "provider": "qq" }` | QRC with word timing, `[startMs,durMs]word(startMs,durMs)…`, usually inside the decrypted XML wrapper (`<QrcInfos>…<Lyric_1 LyricContent="…"/>`); plain LRC for some songs |
+| `betterlyrics` ("Better Lyrics", on by default, first in the list) | `GET /getLyrics` | `{ "ttml": "<tt …>", "score"?: 0..1 }` | Apple-style TTML, word or line timing (the dialect in §2.1g) |
+| `kugou` ("Kugou (Better Lyrics)", on by default) | `GET /kugou/getLyrics` | `{ "lyrics": "[mm:ss.xx]…", "provider": "kugou" }` | LRC, line timing; `[Instrumental Only]` for an instrumental |
+| `qq` ("QQ (Better Lyrics)", on by default) | `GET /qq/getLyrics` | `{ "lyrics": "…", "provider": "qq" }` | QRC with word timing, `[startMs,durMs]word(startMs,durMs)…`, usually inside the decrypted XML wrapper (`<QrcInfos>…<Lyric_1 LyricContent="…"/>`); plain LRC for some songs |
 
 - Query: `s` (song), `a` (artist), `al` (album), `d` (duration, whole seconds). Send each **once** under its short name: the server concatenates aliases when several are sent. We never send `videoId` / `v` (it records a video-to-song link on their server).
 - **No ids, no ETags, nothing echoed back** (no title, artist or duration in the response). The server matches by title / artist / duration itself, with a duration tolerance, so the resolver treats the duration as server-checked (`SERVER_MATCHED`). `score` (fresh fetches only) is ignored.
 - **Cache-only in practice.** Fetching a song they do not have needs an `X-API-Key`, which is not being issued. An uncached song answers **`401`** `{"error":"API key required",…}` on **every** endpoint, kugou and qq included (verified live 2026-11-11; the docs claim those two never need a key). We map `401` to "not found" (cached 6 h, so a song that reaches their cache later is picked up). `404` = no lyrics (cached negative), `422` = no song and no artist sent (text body), `503` = server in cache-only mode (temporary: an error, not cached), `500` = upstream failure.
-- Rate limit: one per-IP limiter for the whole API, burst 15 (`X-RateLimit-Limit`), refilling over time. `429` carries `Retry-After`: `1` (text body) when both tiers are used up, `60` (JSON) when only cached answers are served and the query is not cached. The three endpoints share one cooldown, which is why kugou and qq are opt-in (they triple the requests per track).
+- Rate limit: one per-IP limiter for the whole API, burst 15 (`X-RateLimit-Limit`), refilling over time. `429` carries `Retry-After`: `1` (text body) when both tiers are used up, `60` (JSON) when only cached answers are served and the query is not cached. The three endpoints share one cooldown; with all three enabled (the default since D26) a track costs up to three requests here.
 - **Attribution:** the docs ask apps to link the Better Lyrics site. The credit is "Lyrics from <label>" linking `https://better-lyrics.boidu.dev`, built from our constants only (§6). Check docs.betterlyrics.org for changes to this ask.
 
 ### 2.2 Compatibility traps ⚠️
@@ -437,7 +437,7 @@ CREATE TABLE IF NOT EXISTS track_prefs (
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `lyricsEnabled` | Bool | true | master switch |
-| `lyricsProviders` | String | `lrclib,unison` | ordered; omit a name to disable it |
+| `lyricsProviders` | String | `betterlyrics,unison,lrclib,qq,kugou` | ordered (top = first); omit a name to disable it (D26) |
 | `lyricsGlobalOffsetMs` | Int | 0 | −5000…5000 |
 | `lyricsInPanel` | Bool | true | |
 | `lyricsKaraokeInPanel` | Bool | true | |
@@ -597,7 +597,7 @@ Work milestone by milestone. At the end of each one: **`./tools/dev.sh check` pa
 | Repository URL (goes into `metadata.json` and the User-Agent) | `https://github.com/Umar-Haqimi/lirik` |
 | Fork or write from scratch? | **Fork** plasmusic-toolbar at `0e78da1`, keeping git history. Fastest route to "the same style", and it obliges the project to stay GPL-3.0. |
 | Offer the feature upstream instead? | Not in v1. The minimal-diff rule keeps a later upstream PR possible. |
-| Providers | LRCLIB + Unison, LRCLIB first in the order. Better Lyrics API (`betterlyrics` on by default, `kugou` and `qq` opt-in) added after v1.0.0 (D24). Others wait for N8. |
+| Providers | LRCLIB + Unison, LRCLIB first in the order. Better Lyrics API (`betterlyrics`, `kugou`, `qq`) added after v1.0.0 (D24). Since D26 all five are on by default, in the order `betterlyrics,unison,lrclib,qq,kugou`. Others wait for N8. |
 | Which result wins | Best sync tier first (word > line > plain), then match quality, then provider order. |
 | Exact-id lookups (Spotify / YouTube ids) | Deferred to N1; v1 matches on title + artist + album + duration, plus a YouTube id when the cover-art URL reveals one. |
 | Long-gap threshold | 8 s, configurable 3–30 s. |

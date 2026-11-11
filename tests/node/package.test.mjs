@@ -4,12 +4,20 @@ import assert from "node:assert/strict"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { LIRIK_VERSION, LIRIK_REPO_URL, USER_AGENT } from "../../src/contents/code/constants.mjs"
+import { LIRIK_VERSION, LIRIK_REPO_URL, USER_AGENT, DEFAULT_PROVIDERS } from "../../src/contents/code/constants.mjs"
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8")
 const meta = JSON.parse(read("src/metadata.json"))
 const kp = meta.KPlugin
+
+test("the default provider list is the same in constants.mjs, main.xml and the QML defaults", () => {
+    assert.ok(read("src/contents/config/main.xml").includes(`<default>${DEFAULT_PROVIDERS}</default>`), "main.xml")
+    assert.ok(read("src/contents/ui/config/Lyrics.qml").includes(`cfg_lyricsProvidersDefault: "${DEFAULT_PROVIDERS}"`), "Lyrics.qml")
+    for (const f of ["src/contents/ui/lyrics/LyricsController.qml", "src/contents/ui/lyrics/LyricsEngine.qml"]) {
+        assert.ok(read(f).includes(`property string providers: "${DEFAULT_PROVIDERS}"`), f)
+    }
+})
 
 test("LIRIK_VERSION matches src/metadata.json and package.json", () => {
     assert.equal(LIRIK_VERSION, kp.Version)

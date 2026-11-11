@@ -22,7 +22,7 @@ QtObject {
 
     // --- inputs: config (bound to plasmoid.configuration) ---
     property bool enabled: true
-    property string providers: "lrclib,unison,betterlyrics"
+    property string providers: "betterlyrics,unison,lrclib,qq,kugou"
     property bool providerOrderStrict: false
     property int minTrackS: C.MIN_TRACK_S
     property int maxTrackS: C.MAX_TRACK_S

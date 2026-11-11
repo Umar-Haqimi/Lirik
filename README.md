@@ -17,7 +17,7 @@ as [`README.upstream.md`](README.upstream.md).
 - **Side panel in the full view.** Scrolling lyrics with per-word highlight, overlapping vocals, a gap
   indicator, click a line to seek, and a footer with credits, the sync kind and a per-track timing offset. The
   panel can sit on the left, on the right or be hidden, and has a toggle button.
-- **Providers.** LRCLIB, Unison and the Better Lyrics API (Better Lyrics on by default; Kugou and QQ as opt-ins), you choose which one is asked first; word-synced, line-synced, plain and instrumental results;
+- **Providers.** LRCLIB, Unison and the Better Lyrics API (all on by default, Better Lyrics first), you set their priority by drag and drop; word-synced, line-synced, plain and instrumental results;
   the best version wins and other matches can be tried from the footer menu.
 - **Cache.** Found lyrics and "not found" answers are remembered on your computer (SQLite through Qt's
   LocalStorage) so tracks you replay need no network. Per-track offset, hide and pinned-version choices are
@@ -87,10 +87,10 @@ All upstream settings (General, Compact, Full) are unchanged. In the side panel 
   attribution may lose API access after 7 February 2027; do not remove the credit.
 
 - **Better Lyrics API** ([api.betterlyrics.org](https://docs.betterlyrics.org)) offers three endpoints, each a
-  separate provider in Settings → Lyrics: **Better Lyrics** (word- or line-synced, on by default),
-  **Kugou (Better Lyrics)** and **QQ (Better Lyrics)** (off by default). It serves only songs that are already in
+  separate provider in Settings → Lyrics: **Better Lyrics** (word- or line-synced), **Kugou (Better Lyrics)** and
+  **QQ (Better Lyrics)**, all on by default. It serves only songs that are already in
   its cache (it answers "API key required" for anything else, which Lirik treats as "not found"), and all three
-  endpoints share one rate limit, so enabling Kugou and QQ sends up to three requests per track. Results are
+  endpoints share one rate limit, so with all three on a track costs up to three requests there. Results are
   credited as "Lyrics from <name>" with a link to [better-lyrics.boidu.dev](https://better-lyrics.boidu.dev).
 
 Only these three hosts can be contacted. Credit links open only when they point at the provider hosts or the Better

@@ -526,7 +526,7 @@ cases.push({ name: "betterlyrics constants: host allow-list, defaults, labels, s
     assert.ok(ALLOWED_HOSTS.indexOf("api.betterlyrics.org") >= 0)
     assert.ok(ALLOWED_HOSTS.indexOf("better-lyrics.boidu.dev") < 0) // the credit site is only ever opened in the browser
     assert.deepEqual(PROVIDER_NAMES, ["lrclib", "unison", "betterlyrics", "kugou", "qq"])
-    assert.equal(DEFAULT_PROVIDERS, "lrclib,unison,betterlyrics") // kugou and qq are opt-in
+    assert.equal(DEFAULT_PROVIDERS, "betterlyrics,unison,lrclib,qq,kugou") // all five on, Better Lyrics first (D26)
     for (let i = 0; i < PROVIDER_NAMES.length; i++) {
         assert.ok(providerLabel(PROVIDER_NAMES[i]) !== "")
         assert.ok(COOLDOWN_GROUP[PROVIDER_NAMES[i]] !== undefined)

@@ -504,7 +504,7 @@ Added after v1.0.0. SPEC §2.1i has the API facts; the choices:
   word-timed TTML without the Chinese-catalogue endpoints. `providers/betterlyrics.mjs` serves all three; the
   resolver dispatches on the name. SPEC §2.1i is "i)", not "g)", so the existing §2.1f/g/h references in code and docs
   keep their meaning.
-- **Defaults.** `betterlyrics` is on (`DEFAULT_PROVIDERS = "lrclib,unison,betterlyrics"`, also the `main.xml` default,
+- **Defaults.** (Superseded by D26: all five on.) `betterlyrics` is on (`DEFAULT_PROVIDERS = "lrclib,unison,betterlyrics"`, also the `main.xml` default,
   the controller/engine defaults and the config page's Defaults button). `kugou` and `qq` are opt-in: the three
   endpoints share one per-IP limiter (burst 15 observed live), so enabling all three triples the requests per track.
   An existing install that has an explicit `lyricsProviders` value (e.g. `lrclib,unison`) keeps exactly that list and
@@ -576,3 +576,17 @@ presses Alt+Up / Alt+Down on a focused row) to set the priority, top first.
   must not declare `required property` (Qt then stops providing it). (3) `Kirigami.FormLayout` sized the list from
   `Layout.preferred*` as 0 px high, which gives the handle a negative drag range; the list sets `implicitHeight`.
   `tests/qml/tst_configpage.qml` drags a handle with the real mouse path to cover all three.
+
+## D26. Default provider list: all five on, Better Lyrics first
+
+Decided before the 1.1.0 release, at the author's request. `DEFAULT_PROVIDERS` (and the `main.xml` default, the
+controller/engine defaults and the config page's Defaults value) is now `betterlyrics,unison,lrclib,qq,kugou`.
+
+- **Order.** Better Lyrics (word-timed TTML) first, then Unison, LRCLIB, QQ and Kugou. In the default (non-strict)
+  mode this only breaks ties between results of the same sync tier; with strict order on it decides first (D25).
+- **Kugou and QQ are on.** This reverses D24's opt-in choice. The cost D24 named still holds: the three Better Lyrics
+  endpoints share one per-IP limiter (burst 15) and one cooldown, so each track can cost up to three requests there,
+  and a `429` on any of them pauses all three. Accepted for more matches on Chinese-language catalogues; a user can
+  untick them.
+- **Who it affects.** Only installs without an explicit `lyricsProviders` value. A saved list is kept as it is.
+- `tests/node/package.test.mjs` checks that the four copies of the default agree.
