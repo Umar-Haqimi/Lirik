@@ -43,7 +43,7 @@ function makeEnv() {
             const path = spec.url.replace(/^https?:\/\/[^/]+/, "")
             const r = {
                 t: env.t, url: spec.url, headers: spec.headers, path: path, aborted: false, answered: false,
-                provider: path.indexOf("/api/") === 0 ? "lrclib" : "unison",
+                provider: providerOf(path),
                 kind: classify(path),
             }
             r.deliver = function (a) {
@@ -71,7 +71,18 @@ function makeEnv() {
     return env
 }
 
+function providerOf(path) {
+    if (path.indexOf("/api/") === 0) return "lrclib"
+    if (path.indexOf("/kugou/getLyrics") === 0) return "kugou"
+    if (path.indexOf("/qq/getLyrics") === 0) return "qq"
+    if (path.indexOf("/getLyrics") === 0) return "betterlyrics"
+    return "unison"
+}
+
 function classify(path) {
+    if (path.indexOf("/getLyrics") === 0) return "bl.lookup"
+    if (path.indexOf("/kugou/getLyrics") === 0) return "kugou.lookup"
+    if (path.indexOf("/qq/getLyrics") === 0) return "qq.lookup"
     if (path.indexOf("/api/get/") === 0) return "lrclib.getid"
     if (path.indexOf("/api/get?") === 0) return "lrclib.get"
     if (path.indexOf("/api/v2/search") === 0) return "lrclib.search"
@@ -119,6 +130,7 @@ function router(map) {
             if (r.kind === "lrclib.get" || r.kind === "unison.lookup") return fxr(r.provider === "lrclib" ? "lrclib-get-404" : "unison-lyrics-404")
             if (r.kind === "lrclib.search") return EMPTY_LIST
             if (r.kind === "lrclib.search1") return EMPTY_LIST
+            if (r.kind === "bl.lookup" || r.kind === "kugou.lookup" || r.kind === "qq.lookup") return fxr("betterlyrics-401-uncached")
             return null
         }
         if (typeof v === "function") return v(r, env)
@@ -140,7 +152,8 @@ function world(map, cfg, opts) {
     env.resolver = createResolver({
         http: env.http, cache: env.cache, now: env.now, schedule: env.schedule, random: env.random, onUpdate: env.onUpdate,
     })
-    env.resolver.setConfig(cfg || {})
+    // The legacy cases below were written for the two original providers; Better Lyrics cases pass `providers`.
+    env.resolver.setConfig(Object.assign({ providers: ["lrclib", "unison"] }, cfg || {}))
     return env
 }
 
@@ -1225,4 +1238,182 @@ cases.push({ name: "Unison receives the full artist string", fn: () => {
     assert.ok(u.url.indexOf("artist=Alpha%2C%20Beta") > 0, u.url)
     const l = env.reqs.filter(function (r) { return r.kind === "lrclib.search" })[0]
     assert.ok(l.url.indexOf("artist_name=Alpha&") > 0 || l.url.indexOf("artist_name=Alpha") > 0)
+} })
+
+// --- Better Lyrics API providers (betterlyrics / kugou / qq) -----------------------------------------
+
+const BL_ONLY = { providers: ["betterlyrics"] }
+
+cases.push({ name: "betterlyrics: default providers are lrclib, unison and betterlyrics; kugou and qq are opt-in", fn: () => {
+    const env = world({}, { providers: undefined })
+    lookup(env, TRACK, 100)
+    assert.equal(count(env, "lrclib.get"), 1)
+    assert.equal(count(env, "unison.lookup"), 1)
+    assert.equal(count(env, "bl.lookup"), 1)
+    assert.equal(count(env, "kugou.lookup"), 0)
+    assert.equal(count(env, "qq.lookup"), 0)
+    const all = world({}, { providers: "kugou, qq, nope, betterlyrics, kugou" })
+    lookup(all, TRACK, 100)
+    assert.equal(count(all, "kugou.lookup"), 1)
+    assert.equal(count(all, "qq.lookup"), 1)
+    assert.equal(count(all, "bl.lookup"), 1)
+    assert.equal(count(all, "lrclib.get"), 0)
+} })
+cases.push({ name: "betterlyrics: found -> word-synced, one request with s/a/al/d only, cached with its provider", fn: () => {
+    const env = world({ "bl.lookup": fxr("betterlyrics-ttml") }, BL_ONLY)
+    const s = lookup(env, TRACK)
+    assert.equal(s.status, "synced")
+    assert.equal(s.lyrics.sync, "word")
+    assert.equal(s.source.provider, "betterlyrics")
+    assert.deepEqual(s.source.credits, [{ text: "Better Lyrics", url: "https://better-lyrics.boidu.dev" }])
+    assert.equal(env.reqs.length, 1)
+    const u = env.reqs[0].url
+    assert.equal(u.indexOf("https://api.betterlyrics.org/getLyrics?s=Placeholder%20Title&a=Placeholder%20Artist&al=Placeholder%20Album&d=233"), 0, u)
+    assert.equal(env.reqs[0].headers["User-Agent"], USER_AGENT)
+    const row = env.cache.rows[s.trackKey]
+    assert.equal(row.provider, "betterlyrics")
+    assert.equal(row.providerId, s.source.id)
+    assert.equal(row.etag, null)
+    // next play: from the cache, no request
+    env.resolver.setTrack(OTHER_SKIPPED)
+    env.advance(QUIET)
+    env.resolver.setTrack(TRACK)
+    env.advance(QUIET)
+    assert.equal(env.reqs.length, 1)
+    assert.equal(env.resolver.state().source.provider, "betterlyrics")
+} })
+cases.push({ name: "betterlyrics: kugou is line-synced, qq word-synced; each has its own credit label", fn: () => {
+    const k = world({ "kugou.lookup": fxr("betterlyrics-kugou-lrc") }, { providers: ["kugou"] })
+    const ks = lookup(k, TRACK)
+    assert.equal(ks.status, "synced")
+    assert.equal(ks.lyrics.sync, "line")
+    assert.equal(ks.source.provider, "kugou")
+    assert.equal(ks.source.credits[0].text, "Kugou (Better Lyrics)")
+    assert.equal(k.reqs[0].path.indexOf("/kugou/getLyrics?"), 0)
+    const q = world({ "qq.lookup": fxr("betterlyrics-qq-qrc-xml") }, { providers: ["qq"] })
+    const qs = lookup(q, TRACK)
+    assert.equal(qs.lyrics.sync, "word")
+    assert.equal(qs.source.provider, "qq")
+    assert.equal(qs.source.credits[0].text, "QQ (Better Lyrics)")
+} })
+cases.push({ name: "betterlyrics: 401 (not cached on their side) is notfound and cached for 6 h", fn: () => {
+    const env = world({}, BL_ONLY)
+    const s = lookup(env, TRACK)
+    assert.equal(s.status, "notfound")
+    assert.equal(env.cache.rows[s.trackKey].status, "notfound")
+    assert.equal(env.cache.rows[s.trackKey].provider, "betterlyrics")
+    env.resolver.setTrack(OTHER_SKIPPED)
+    env.advance(QUIET)
+    env.resolver.setTrack(TRACK)
+    env.advance(QUIET)
+    assert.equal(env.reqs.length, 1, "served from the cached miss")
+    env.advance(NOTFOUND_TTL_MS + 1000)
+    env.resolver.setTrack(OTHER_SKIPPED)
+    env.advance(QUIET)
+    env.resolver.setTrack(TRACK)
+    env.advance(QUIET)
+    assert.equal(env.reqs.length, 2, "asked again after the TTL")
+    // a notfound row from before kugou was enabled does not hide it
+    const e2 = world({}, { providers: ["betterlyrics"] })
+    const s2 = lookup(e2, TRACK)
+    e2.resolver.setConfig({ providers: ["betterlyrics", "kugou"] })
+    e2.advance(DEBOUNCE_MS + 1000)
+    assert.equal(count(e2, "kugou.lookup"), 1)
+    assert.equal(e2.resolver.state().trackKey, s2.trackKey)
+} })
+cases.push({ name: "betterlyrics: 503 (cache-only mode) is an error and is not cached as a miss", fn: () => {
+    const env = world({ "bl.lookup": fxr("betterlyrics-503-cacheonly") }, BL_ONLY)
+    const s = lookup(env, TRACK)
+    assert.equal(s.status, "error")
+    assert.equal(s.error.provider, "betterlyrics")
+    assert.equal(s.error.status, 503)
+    assert.equal(env.cache.rows[s.trackKey], undefined)
+} })
+cases.push({ name: "betterlyrics: 429 puts betterlyrics, kugou and qq on one cooldown; unison is not affected", fn: () => {
+    const env = world({ "kugou.lookup": RL(30) }, { providers: ["kugou", "betterlyrics", "qq"] })
+    const s = lookup(env, TRACK, 100)
+    assert.equal(s.status, "ratelimited")
+    assert.equal(count(env, "kugou.lookup"), 1)
+    assert.equal(count(env, "bl.lookup"), 1)
+    assert.equal(count(env, "qq.lookup"), 1)
+    // another track while the cooldown lasts: none of the three is asked
+    env.resolver.setTrack(track({ title: "Another Title" }))
+    env.advance(DEBOUNCE_MAX_MS + 500)
+    assert.equal(count(env, "kugou.lookup"), 1)
+    assert.equal(count(env, "bl.lookup"), 1)
+    assert.equal(count(env, "qq.lookup"), 1)
+    assert.equal(env.resolver.state().status, "ratelimited")
+    const un = world({ "kugou.lookup": RL(30) }, { providers: ["kugou", "unison"] })
+    lookup(un, TRACK, 100)
+    un.resolver.setTrack(track({ title: "Another Title" }))
+    un.advance(DEBOUNCE_MAX_MS + 500)
+    assert.equal(count(un, "unison.lookup"), 2, "Unison has its own cooldown")
+    assert.equal(count(un, "kugou.lookup"), 1)
+} })
+cases.push({ name: "betterlyrics: word sync beats LRCLIB line sync inside the swap window", fn: () => {
+    const env = world({
+        "lrclib.get": fxr("lrclib-get-line"),
+        "bl.lookup": Object.assign(fxr("betterlyrics-ttml"), { delay: 300 }),
+    }, { providers: ["lrclib", "betterlyrics"] })
+    const s = lookup(env, TRACK)
+    assert.equal(s.source.provider, "betterlyrics")
+    assert.equal(s.lyrics.sync, "word")
+    assert.equal(env.cache.rows[s.trackKey].provider, "betterlyrics")
+    assert.equal(s.alternates.length, 1)
+    assert.equal(s.alternates[0].provider, "lrclib")
+} })
+cases.push({ name: "betterlyrics: tryNextMatch re-asks for the current track and pins the synthetic id", fn: () => {
+    const env = world({
+        "lrclib.get": Object.assign(fxr("lrclib-get-line"), { delay: 300 }),
+        "lrclib.getid": function (r) { return withId(fxr("lrclib-get-line"), r.path.split("/").pop()) },
+        "bl.lookup": fxr("betterlyrics-ttml"),
+    }, { providers: ["lrclib", "betterlyrics"] })
+    const s = lookup(env, TRACK)
+    assert.equal(s.source.provider, "betterlyrics")
+    assert.equal(s.alternates[0].provider, "lrclib")
+    assert.equal(env.resolver.tryNextMatch(), true)
+    env.advance(200)
+    const n = env.resolver.state()
+    assert.equal(n.source.provider, "lrclib")
+    assert.equal(n.alternates[n.alternates.length - 1].provider, "betterlyrics")
+    const back = n.alternates[n.alternates.length - 1]
+    assert.ok(/^q[0-9a-f]{8}$/.test(back.id))
+    const before = count(env, "bl.lookup")
+    assert.equal(env.resolver.tryNextMatch(), true)
+    env.advance(200)
+    assert.equal(count(env, "bl.lookup"), before + 1, "no ids on this API: the lookup is repeated")
+    const b = env.resolver.state()
+    assert.equal(b.source.provider, "betterlyrics")
+    assert.equal(b.source.id, back.id)
+    assert.equal(env.cache.prefs[s.trackKey].pinnedProvider, "betterlyrics")
+    assert.equal(env.cache.prefs[s.trackKey].pinnedId, back.id)
+} })
+cases.push({ name: "betterlyrics: a pinned Better Lyrics version is fetched directly and keeps its id", fn: () => {
+    const env = world({ "bl.lookup": fxr("betterlyrics-ttml"), "lrclib.get": fxr("lrclib-get-line") }, { providers: ["lrclib", "betterlyrics"] })
+    const s = lookup(env, TRACK)
+    env.cache.prefs[s.trackKey] = { offsetMs: 0, pinnedProvider: "betterlyrics", pinnedId: "qdeadbeef", lyricsDisabled: false }
+    delete env.cache.rows[s.trackKey]
+    env.resolver.setTrack(OTHER_SKIPPED)
+    env.advance(QUIET)
+    env.resolver.setTrack(TRACK)
+    env.advance(QUIET)
+    const st = env.resolver.state()
+    assert.equal(st.status, "synced")
+    assert.equal(st.source.provider, "betterlyrics")
+    assert.equal(env.cache.rows[s.trackKey].providerId, "qdeadbeef")
+    assert.equal(count(env, "lrclib.get"), 1, "the pin skipped the normal lookup")
+    assert.equal(count(env, "bl.lookup"), 2)
+} })
+cases.push({ name: "betterlyrics: a pin to an unknown provider is ignored (no request for it) and the normal lookup runs", fn: () => {
+    const env = world({}, BL_ONLY)
+    const s = lookup(env, TRACK)
+    env.cache.prefs[s.trackKey] = { offsetMs: 0, pinnedProvider: "nope", pinnedId: "1", lyricsDisabled: false }
+    delete env.cache.rows[s.trackKey]
+    const n = env.reqs.length
+    env.resolver.setTrack(OTHER_SKIPPED)
+    env.advance(QUIET)
+    env.resolver.setTrack(TRACK)
+    env.advance(QUIET)
+    assert.equal(env.reqs.length, n + 1, "only the normal lookup")
+    assert.equal(env.cache.prefs[s.trackKey].pinnedId, "1")
 } })

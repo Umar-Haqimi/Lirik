@@ -6,6 +6,7 @@ import { parseYaml } from "../../src/contents/code/yaml-lite.mjs"
 import { parseLyricsfile } from "../../src/contents/code/lyricsfile.mjs"
 import { parseXml } from "../../src/contents/code/xml-lite.mjs"
 import { parseTtml } from "../../src/contents/code/ttml.mjs"
+import { parseQrc } from "../../src/contents/code/qrc.mjs"
 import { fixture, fixtureNames } from "../fixtures/fixtures.gen.mjs"
 
 const ITERATIONS = 2000
@@ -66,6 +67,7 @@ function fuzz(name, seed, corpus, parse) {
 
 const lrcCorpus = fixtureNames("lrc/").map(fixture)
 const yamlCorpus = fixtureNames("lyricsfile/").map(fixture)
+const qrcCorpus = fixtureNames("qrc/").map(fixture).concat(fixtureNames("lrc/").slice(0, 3).map(fixture))
 const ttmlCorpus = fixtureNames("ttml/").map(fixture).concat(fixtureNames("malformed-ttml/").map(fixture))
 
 export const cases = [
@@ -74,4 +76,5 @@ export const cases = [
     fuzz("lyricsfile", 303, yamlCorpus, parseLyricsfile),
     fuzz("xml-lite", 404, ttmlCorpus, parseXml),
     fuzz("ttml", 505, ttmlCorpus, parseTtml),
+    fuzz("qrc", 606, qrcCorpus, parseQrc),
 ]

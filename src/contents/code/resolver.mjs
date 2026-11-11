@@ -20,7 +20,7 @@ import {
     DEBOUNCE_MS, DEBOUNCE_MAX_MS, SWAP_WINDOW_MS, RETRY_JITTER_FRACTION, LOOKUP_PENDING_MAX_RETRIES,
     PENDING_MAX_WAIT_S, NOTFOUND_TTL_MS, FOUND_TTL_MS, CACHE_SCHEMA_V, MAX_ALTERNATES, MIN_TRACK_S, MAX_TRACK_S,
     OFFSET_MIN_MS, OFFSET_MAX_MS, INCOMPLETE_TTL_MS, AUTO_RETRY_MAX, LRCLIB_MAX_CANDIDATE_TRIES, ALT_MAX_TRIES,
-    PROVIDER_NAMES, THROTTLE_WINDOW_MS, THROTTLE_MAX_STARTS,
+    PROVIDER_NAMES, DEFAULT_PROVIDERS, THROTTLE_WINDOW_MS, THROTTLE_MAX_STARTS, COOLDOWN_GROUP, SERVER_MATCHED,
 } from "./constants.mjs"
 import { stableSort, clamp } from "./model.mjs"
 import { clean, skipReason } from "./trackinfo.mjs"
@@ -30,6 +30,7 @@ import {
     buildSearchV1 as lrBuildSearchV1, mapGet as lrMapGet, mapSearch as lrMapSearch, mapRecord as lrMapRecord,
 } from "./providers/lrclib.mjs"
 import { buildLookup as unBuildLookup, buildById as unBuildById, mapLookup as unMapLookup } from "./providers/unison.mjs"
+import { buildLookup as blBuildLookup, mapLookup as blMapLookup, handles as blHandles } from "./providers/betterlyrics.mjs"
 
 // Skip reasons the user may override with lookUpAnyway().
 const OVERRIDABLE = { "too-short": true, "too-long": true, "excluded-player": true, "track-disabled": true }
@@ -61,7 +62,7 @@ function parseProviders(v) {
 function normalizeConfig(c) {
     return {
         enabled: c.enabled !== false,
-        providers: c.providers === undefined ? PROVIDER_NAMES.slice() : parseProviders(c.providers),
+        providers: parseProviders(c.providers === undefined ? DEFAULT_PROVIDERS : c.providers),
         minTrackS: typeof c.minTrackS === "number" ? c.minTrackS : MIN_TRACK_S,
         maxTrackS: typeof c.maxTrackS === "number" ? c.maxTrackS : MAX_TRACK_S,
         excludedPlayers: parseList(c.excludedPlayers),
@@ -133,8 +134,12 @@ export function createResolver(deps) {
     let disposed = false
     let cur = null // the current track: { key, info, override, prefs, timer, retry, autoRetries }
     let L = null // the active lookup
-    const cooldown = { lrclib: 0, unison: 0 }
-    const starts = { lrclib: [], unison: [] } // recent lookup start times per provider
+    const cooldown = {} // by cooldown group (COOLDOWN_GROUP): the Better Lyrics endpoints share one rate limiter
+    const starts = {} // recent lookup start times per provider
+    for (let i = 0; i < PROVIDER_NAMES.length; i++) {
+        cooldown[COOLDOWN_GROUP[PROVIDER_NAMES[i]]] = 0
+        starts[PROVIDER_NAMES[i]] = []
+    }
     const memPrefs = {}
     let lastSetAt = -1e15 // last setTrack call
     let lastChangeAt = -1e15 // last non-burst track change
@@ -294,12 +299,13 @@ export function createResolver(deps) {
     }
 
     function setCooldown(name, retryAfterS) {
+        const g = COOLDOWN_GROUP[name]
         const until = now() + retryAfterS * 1000 * (1 + random() * RETRY_JITTER_FRACTION)
-        if (until > cooldown[name]) cooldown[name] = until
+        if (until > cooldown[g]) cooldown[g] = until
     }
 
     function cooldownLeftMs(name) {
-        return Math.max(0, cooldown[name] - now())
+        return Math.max(0, cooldown[COOLDOWN_GROUP[name]] - now())
     }
 
     function cooldownLeftS(name) {
@@ -321,7 +327,7 @@ export function createResolver(deps) {
     /** Mark whether the duration backs this result (trap 7): unknown durations rank lower. */
     function markDuration(lk, m) {
         const qd = lk.c.info.durationS
-        m.durationUnknown = !(knownDuration(qd) && (m.provider === "unison" || knownDuration(m.durationS)))
+        m.durationUnknown = !(knownDuration(qd) && (SERVER_MATCHED.indexOf(m.provider) >= 0 || knownDuration(m.durationS)))
         return m
     }
 
@@ -413,6 +419,16 @@ export function createResolver(deps) {
         attempt(0)
     }
 
+    /** One lookup on the Better Lyrics API (`name` = betterlyrics | kugou | qq). No ids and no ETags: one request. */
+    function runBetterLyrics(lk, name) {
+        const spec = blBuildLookup(name, lk.c.info, httpOpts())
+        send(lk, name, spec, function (s, h, b) { return blMapLookup(name, s, h, b, spec) }, function (m) {
+            if (m.kind === "found") return finish(lk, name, markDuration(lk, m))
+            if (m.kind === "notfound") return finish(lk, name, m)
+            return failOutcome(lk, name, m)
+        })
+    }
+
     function synthFromRow(row) {
         const src = row.payload && row.payload.source ? row.payload.source : {}
         return {
@@ -434,7 +450,7 @@ export function createResolver(deps) {
 
     function runProvider(lk, name) {
         if (lk.cancelled) return
-        if (cooldown[name] > now()) {
+        if (cooldownLeftMs(name) > 0) {
             finish(lk, name, { kind: "ratelimited", retryAfterS: cooldownLeftS(name), status: 0, skipped: true })
             return
         }
@@ -445,7 +461,8 @@ export function createResolver(deps) {
         }
         starts[name].push(now())
         if (name === "lrclib") runLrclib(lk)
-        else runUnison(lk)
+        else if (name === "unison") runUnison(lk)
+        else runBetterLyrics(lk, name)
     }
 
     function runPipeline(lk) {
@@ -618,14 +635,19 @@ export function createResolver(deps) {
 
     function fetchById(lk, alt, cb) {
         const name = alt.provider
-        if (name !== "lrclib" && name !== "unison") return cb({ kind: "error", message: "unknown provider", status: 0 })
-        if (cooldown[name] > now()) return cb({ kind: "ratelimited", retryAfterS: cooldownLeftS(name), status: 0, skipped: true, provider: name })
+        if (PROVIDER_NAMES.indexOf(name) < 0) return cb({ kind: "error", message: "unknown provider", status: 0 })
+        if (cooldownLeftMs(name) > 0) return cb({ kind: "ratelimited", retryAfterS: cooldownLeftS(name), status: 0, skipped: true, provider: name })
         const info = lk.c.info
         let spec
         let mapper
         if (name === "lrclib") {
             spec = lrBuildById(alt.id, httpOpts())
             mapper = function (s, h, b) { return lrMapGet(s, h, b, "search") }
+        } else if (blHandles(name)) {
+            // No ids on this API: ask again for the current track (a cache hit on their side) and keep the
+            // pinned id, so pins and alternates keep matching.
+            spec = blBuildLookup(name, info, httpOpts())
+            mapper = function (s, h, b) { return blMapLookup(name, s, h, b, spec) }
         } else {
             spec = unBuildById(alt.id, httpOpts())
             mapper = function (s, h, b) { return unMapLookup(s, h, b, { matchedBy: "search" }) }
@@ -634,6 +656,7 @@ export function createResolver(deps) {
             if (m.kind === "found" && durationRejects(info.durationS, m.durationS)) m = { kind: "notfound" }
             if (m.kind === "ratelimited" && !m.skipped) setCooldown(name, m.retryAfterS)
             if (m.kind === "found") markDuration(lk, m)
+            if (m.kind === "found" && blHandles(name)) m.providerId = String(alt.id)
             m.provider = m.provider || name
             cb(m)
         })
@@ -746,7 +769,7 @@ export function createResolver(deps) {
 
     // --- public API ---------------------------------------------------------------
 
-    /** Configure: { enabled, providers: ["lrclib","unison"] | "lrclib,unison", minTrackS, maxTrackS, excludedPlayers, cacheEnabled, devBaseUrl }. */
+    /** Configure: { enabled, providers: ["lrclib","unison","betterlyrics"] | "lrclib,unison,betterlyrics" (any of PROVIDER_NAMES), minTrackS, maxTrackS, excludedPlayers, cacheEnabled, devBaseUrl }. */
     function setConfig(c) {
         if (disposed) return
         const merged = normalizeConfig(Object.assign({}, cfg, c || {}))

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Local stand-in for LRCLIB and Unison (dev/test only, never shipped). SPEC §7.1.
+// Local stand-in for LRCLIB, Unison and the Better Lyrics API (dev/test only, never shipped). SPEC §7.1.
 //
 //   node tools/stub-server.mjs [--port 47800] [--port-file <path>]
 //
@@ -7,9 +7,12 @@
 // can never be mistaken for this server). --port-file writes {"port", "second"} as JSON once both origins listen.
 // The server exits on its own when the process that started it goes away (no leaked servers).
 //
-// Serves both providers on one origin (the widget's lyricsDevBaseUrl replaces both bases):
+// Serves all providers on one origin (the widget's lyricsDevBaseUrl replaces every base):
 //   LRCLIB:  /api/get   /api/get/:id   /api/v2/search   /api/search
 //   Unison:  /lyrics    /lyrics/:id    /lyrics/search
+//   Better Lyrics API:  /getLyrics (TTML)   /kugou/getLyrics (LRC)   /qq/getLyrics (QRC in its XML wrapper)
+//     query s, a, al, d. A track the endpoint has no lyrics for answers 401 like the real API does for an
+//     uncached song. "Line Placeholder" has no QQ lyrics; the Plain and Quiet tracks have none on any endpoint.
 // Every record is built from SYNTHETIC data (placeholder words, tests/fixtures/{lrc,lyricsfile,ttml}).
 //
 // Tracks (matched by title, case-insensitive; artist is ignored):
@@ -22,6 +25,7 @@
 //   ~latencyN   delay the response N ms        ~404   force not found       ~429   rate limited (Retry-After 3)
 //   ~503        plain 503                      ~500   server error          ~pending  Unison 503 LOOKUP_PENDING
 //                                                                            for the first two requests (Retry-After 1)
+//   ~401        Better Lyrics "API key required" (uncached)
 // GET /__redirect?to=<url> answers 302 to <url>; the same handler also listens on a second origin (PORT + 1, or a
 // free port with --port 0). GET /__info returns {"port", "second"}.
 // Control endpoint: POST /__control {"latencyMs":N,"status":404|429|500|503|"pending"|null,"retryAfter":S,"reset":true}
@@ -99,6 +103,20 @@ function gappedTtml() {
         '<head><metadata><ttm:agent type="person" xml:id="v1"/></metadata></head><body dur="3:00.000"><div>' + ps + "</div></body></tt>"
 }
 
+function gappedQrc() {
+    let q = "[ti:Gapped Placeholder]\n[ar:Example Artist]\n[al:Placeholder Album]\n[by:]\n[offset:0]\n"
+    for (const [s, e, words] of LINES) {
+        q += "[" + s + "," + (e - s) + "]" + wordTimes(s, e, words).map(t => t.w + "(" + t.s + "," + (t.e - t.s) + ")").join("") + "\n"
+    }
+    return q
+}
+
+// The decrypted XML wrapper the real /qq/getLyrics returns (the QRC sits in the LyricContent attribute).
+function wrapQrc(qrc) {
+    return '<?xml version="1.0" encoding="utf-8"?>\n<QrcInfos>\n<QrcHeadInfo SaveTime="1000000000000" Version="100"/>\n' +
+        '<LyricInfo LyricCount="1">\n<Lyric_1 LyricType="1" LyricContent="' + qrc + '"/>\n</LyricInfo>\n</QrcInfos>'
+}
+
 // --- catalog ---------------------------------------------------------------------
 
 const ARTIST = "Example Artist"
@@ -108,11 +126,13 @@ const TRACKS = [
         title: "Gapped Placeholder", durationS: 180, lrclibId: 1001, unisonId: 2001, instrumental: false,
         lyricsfile: gappedLyricsfile("Gapped Placeholder", ARTIST), syncedLyrics: gappedLrc(), plainLyrics: LINES.map(l => l[2].join("")).join("\n"),
         hasWordSync: true, unison: { format: "ttml", syncType: "richsync", lyrics: gappedTtml(), confidence: "medium" },
+        bl: { ttml: gappedTtml(), kugou: gappedLrc(), qq: wrapQrc(gappedQrc()) },
     },
     {
         title: "Line Placeholder", durationS: 185, lrclibId: 1002, unisonId: 2002, instrumental: false,
         lyricsfile: null, syncedLyrics: read("lrc/basic.lrc"), plainLyrics: "la lo mira\nsol vena tarum\nnemo vora kesh\npla ce holder\nultima linea",
         hasWordSync: false, unison: { format: "lrc", syncType: "linesync", lyrics: read("lrc/basic.lrc"), confidence: "high" },
+        bl: { ttml: read("ttml/line.ttml"), kugou: read("lrc/basic.lrc"), qq: null },
     },
     {
         title: "Plain Placeholder", durationS: 200, lrclibId: 1003, unisonId: 0, instrumental: false,
@@ -226,6 +246,20 @@ function handleUnison(url, p, res, t, kw, req) {
     return unNotFound(res)
 }
 
+const blNotCached = (res, provider) => send(res, 401, Object.assign(
+    { error: "API key required", message: "Uncached queries require a valid API key via X-API-Key header" },
+    provider === "betterlyrics" ? {} : { provider: provider }))
+
+function handleBetterLyrics(provider, req, res, url, t, kw) {
+    const q = url.searchParams
+    if (!q.get("s") && !q.get("a")) return send(res, 422, "Song name or artist name not provided\n", { "content-type": "text/plain; charset=utf-8" })
+    if (kw["401"]) return blNotCached(res, provider)
+    if (kw["404"]) return send(res, 404, { error: "No lyrics found" })
+    const body = t && t.bl ? t.bl[provider === "betterlyrics" ? "ttml" : provider] : null
+    if (!body) return blNotCached(res, provider)
+    return send(res, 200, provider === "betterlyrics" ? { ttml: body } : { lyrics: body, provider: provider }, { "cache-control": "max-age=300", "x-cache-status": "HIT" })
+}
+
 function handleProvider(provider, req, res, url) {
     const p = url.pathname
     const q = {}
@@ -235,7 +269,7 @@ function handleProvider(provider, req, res, url) {
     if (log.length > 2000) log.shift()
     console.log(JSON.stringify(entry))
 
-    const title = q.track_name || q.song || q.q || ""
+    const title = q.track_name || q.song || q.s || q.q || ""
     const parsed = parseKeywords(title)
     const kw = parsed.kw
     const t = findByTitle(parsed.base)
@@ -249,8 +283,10 @@ function handleProvider(provider, req, res, url) {
         if (forced === 429 || kw["429"]) return send(res, 429, { message: "rate limited" }, { "retry-after": String(control.retryAfter) })
         if (forced === 503 || kw["503"]) return send(res, 503, { message: "unavailable" }, { "retry-after": String(control.retryAfter) })
         if (forced === 500 || kw["500"]) return send(res, 500, { message: "server error" })
-        if (forced === 404) return provider === "lrclib" ? lrNotFound(res) : unNotFound(res)
-        return provider === "lrclib" ? handleLrclib(url, p, res, t, kw) : handleUnison(url, p, res, t, kw, req)
+        if (forced === 404) return provider === "lrclib" ? lrNotFound(res) : provider === "unison" ? unNotFound(res) : send(res, 404, { error: "No lyrics found" })
+        if (provider === "lrclib") return handleLrclib(url, p, res, t, kw)
+        if (provider === "unison") return handleUnison(url, p, res, t, kw, req)
+        return handleBetterLyrics(provider, req, res, url, t, kw)
     }, delay)
 }
 
@@ -296,6 +332,9 @@ const server = http.createServer(function (req, res) {
     if (req.method !== "GET") return send(res, 405, { error: "method not allowed" })
     if (p.startsWith("/api/")) return handleProvider("lrclib", req, res, url)
     if (p === "/lyrics" || p.startsWith("/lyrics/")) return handleProvider("unison", req, res, url)
+    if (p === "/getLyrics") return handleProvider("betterlyrics", req, res, url)
+    if (p === "/kugou/getLyrics") return handleProvider("kugou", req, res, url)
+    if (p === "/qq/getLyrics") return handleProvider("qq", req, res, url)
     return send(res, 404, { error: "not found" })
 })
 

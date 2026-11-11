@@ -10,7 +10,7 @@ import path from "node:path"
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..")
 const DIR = path.join(ROOT, "tests/fixtures")
 const OUT = path.join(DIR, "fixtures.gen.mjs")
-const SUBDIRS = ["lrc", "lyricsfile", "ttml", "malformed-ttml", "api", "tracks"]
+const SUBDIRS = ["lrc", "lyricsfile", "ttml", "malformed-ttml", "qrc", "api", "tracks"]
 
 function build() {
     const entries = []

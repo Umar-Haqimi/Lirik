@@ -1,10 +1,14 @@
 import { assert } from "./assert.mjs"
 import { fixture } from "../fixtures/fixtures.gen.mjs"
-import { USER_AGENT, LRCLIB_BASE, UNISON_BASE, MAX_BODY_BYTES } from "../../src/contents/code/constants.mjs"
+import {
+    USER_AGENT, LRCLIB_BASE, UNISON_BASE, MAX_BODY_BYTES, BETTERLYRICS_BASE, BETTERLYRICS_SITE, ALLOWED_HOSTS,
+    PROVIDER_NAMES, DEFAULT_PROVIDERS, PROVIDER_LABELS, COOLDOWN_GROUP, SERVER_MATCHED, providerLabel,
+} from "../../src/contents/code/constants.mjs"
 import { clean } from "../../src/contents/code/trackinfo.mjs"
 import { acceptCandidate } from "../../src/contents/code/match.mjs"
 import * as lr from "../../src/contents/code/providers/lrclib.mjs"
 import * as un from "../../src/contents/code/providers/unison.mjs"
+import * as bl from "../../src/contents/code/providers/betterlyrics.mjs"
 
 function fx(name) {
     return JSON.parse(fixture("api/" + name + ".json"))
@@ -385,4 +389,154 @@ cases.push({ name: "unison: the full cleaned artist string is sent", fn: () => {
 cases.push({ name: "unison: matchedBy comes from the response only", fn: () => {
     assert.equal(un.mapLookup(200, {}, unisonBody({}), { usedVideoId: true }).matchedBy, "signature")
     assert.equal(un.mapLookup(200, {}, unisonBody({ matchedBy: "videoId" }), {}).matchedBy, "id")
+} })
+
+// --- Better Lyrics API (betterlyrics / kugou / qq) -------------------------------------------------
+
+function blMap(name, fixtureName) {
+    const f = fx(fixtureName)
+    return bl.mapLookup(name, f.status, f.headers, f.body, bl.buildLookup(name, info()))
+}
+function blJson(name, obj, status) {
+    return bl.mapLookup(name, status === undefined ? 200 : status, {}, JSON.stringify(obj), bl.buildLookup(name, info()))
+}
+const BL_CREDITS = function (name) { return [{ text: PROVIDER_LABELS[name], url: BETTERLYRICS_SITE }] }
+
+cases.push({ name: "betterlyrics buildLookup: exact URLs for the three endpoints, one short param of each kind", fn: () => {
+    const i = info({ title: "Song (Live)", artist: "One, Two", album: "Al bum", lengthUs: 249.6e6, artUrl: "https://i.ytimg.com/vi/dQw4w9WgXcQ/x.jpg" })
+    const q = "?s=Song&a=One%2C%20Two&al=Al%20bum&d=250"
+    assert.equal(bl.buildLookup("betterlyrics", i).url, BETTERLYRICS_BASE + "/getLyrics" + q)
+    assert.equal(bl.buildLookup("kugou", i).url, BETTERLYRICS_BASE + "/kugou/getLyrics" + q)
+    assert.equal(bl.buildLookup("qq", i).url, BETTERLYRICS_BASE + "/qq/getLyrics" + q)
+    const r = bl.buildLookup("betterlyrics", i)
+    assert.equal(r.headers["User-Agent"], USER_AGENT)
+    assert.equal(r.headers["X-API-Key"], undefined)
+    assert.equal(r.url.indexOf("videoId"), -1) // never links a video to a song on their server
+    assert.equal(r.url.indexOf("v="), -1)
+} })
+cases.push({ name: "betterlyrics buildLookup: no album / duration; base override; unknown name falls back to /getLyrics", fn: () => {
+    const r = bl.buildLookup("qq", info({ album: "", lengthUs: 0 }), { base: "http://127.0.0.1:1/" })
+    assert.equal(r.url, "http://127.0.0.1:1/qq/getLyrics?s=Song&a=Artist")
+    assert.equal(bl.buildLookup("nope", info()).url.indexOf(BETTERLYRICS_BASE + "/getLyrics?"), 0)
+    assert.equal(bl.handles("kugou"), true)
+    assert.equal(bl.handles("unison"), false)
+    assert.equal(bl.handles("constructor"), false)
+} })
+cases.push({ name: "betterlyrics providerIdOf: stable, query-only, distinct per query", fn: () => {
+    const a = bl.buildLookup("betterlyrics", info())
+    const b = bl.buildLookup("betterlyrics", info(), { base: "http://127.0.0.1:9" })
+    const c = bl.buildLookup("betterlyrics", info({ title: "Other" }))
+    assert.ok(/^q[0-9a-f]{8}$/.test(bl.providerIdOf(a)))
+    assert.equal(bl.providerIdOf(a), bl.providerIdOf(b))
+    assert.ok(bl.providerIdOf(a) !== bl.providerIdOf(c))
+    assert.ok(/^q[0-9a-f]{8}$/.test(bl.providerIdOf(undefined)))
+} })
+cases.push({ name: "betterlyrics /getLyrics TTML (live shape) -> word sync, credit from constants", fn: () => {
+    const m = blMap("betterlyrics", "betterlyrics-ttml")
+    assert.equal(m.kind, "found")
+    assert.equal(m.provider, "betterlyrics")
+    assert.equal(m.lyrics.sync, "word")
+    assert.ok(m.lyrics.lines.length > 10)
+    assert.equal(m.matchedBy, "signature")
+    assert.equal(m.durationS, null)
+    assert.deepEqual(m.credits, BL_CREDITS("betterlyrics"))
+    assert.deepEqual(m.lyrics.source, { provider: "betterlyrics", id: m.providerId, matchedBy: "signature", credits: BL_CREDITS("betterlyrics") })
+} })
+cases.push({ name: "betterlyrics /kugou/getLyrics LRC (live shape) -> line sync", fn: () => {
+    const m = blMap("kugou", "betterlyrics-kugou-lrc")
+    assert.equal(m.kind, "found")
+    assert.equal(m.provider, "kugou")
+    assert.equal(m.lyrics.sync, "line")
+    assert.deepEqual(m.credits, BL_CREDITS("kugou"))
+    assert.equal(m.credits[0].text, "Kugou (Better Lyrics)")
+} })
+cases.push({ name: "betterlyrics /qq/getLyrics QRC in its XML wrapper (live shape) -> word sync", fn: () => {
+    const m = blMap("qq", "betterlyrics-qq-qrc-xml")
+    assert.equal(m.kind, "found")
+    assert.equal(m.provider, "qq")
+    assert.equal(m.lyrics.sync, "word")
+    assert.ok(m.lyrics.lines[0].words.length > 1)
+    assert.deepEqual(m.credits, BL_CREDITS("qq"))
+} })
+cases.push({ name: "betterlyrics statuses: 401 (not cached, key needed) / 404 / 422 are notfound with a reason", fn: () => {
+    assert.deepEqual(blMap("betterlyrics", "betterlyrics-401-uncached"), { kind: "notfound", reason: "uncached" })
+    assert.deepEqual(blMap("kugou", "betterlyrics-kugou-401-uncached"), { kind: "notfound", reason: "uncached" })
+    assert.deepEqual(blMap("betterlyrics", "betterlyrics-404"), { kind: "notfound", reason: "none" })
+    assert.deepEqual(blMap("betterlyrics", "betterlyrics-422-noquery"), { kind: "notfound", reason: "noquery" })
+} })
+cases.push({ name: "betterlyrics 429: Retry-After 1 (text) and 60 (JSON, not cached); no header -> default; 503 is an error, not a cached miss", fn: () => {
+    const t = blMap("betterlyrics", "betterlyrics-429-text")
+    assert.equal(t.kind, "ratelimited")
+    assert.equal(t.retryAfterS, 1)
+    const j = blMap("qq", "betterlyrics-429-json")
+    assert.equal(j.kind, "ratelimited")
+    assert.equal(j.retryAfterS, 60)
+    assert.equal(bl.mapLookup("kugou", 429, {}, "").retryAfterS, 5)
+    const s = blMap("betterlyrics", "betterlyrics-503-cacheonly")
+    assert.equal(s.kind, "error")
+    assert.equal(s.status, 503)
+    assert.equal(s.message, "Service is in cache-only mode")
+    const e = bl.mapLookup("betterlyrics", 500, {}, "<html>boom</html>")
+    assert.equal(e.kind, "error")
+    assert.equal(e.message, "boom")
+} })
+cases.push({ name: "betterlyrics kugou: instrumental marker, plain text without time tags, LRC with tags", fn: () => {
+    const inst = blJson("kugou", { lyrics: "[00:00.00][Instrumental Only]", provider: "kugou" })
+    assert.equal(inst.kind, "found")
+    assert.equal(inst.lyrics.instrumental, true)
+    assert.equal(blJson("kugou", { lyrics: "[Instrumental Only]" }).lyrics.instrumental, true)
+    const plain = blJson("kugou", { lyrics: "la la\nlo lo", provider: "kugou" })
+    assert.equal(plain.kind, "found")
+    assert.equal(plain.lyrics.sync, "none")
+    assert.equal(plain.lyrics.plain, "la la\nlo lo")
+    assert.equal(blJson("kugou", { lyrics: "[00:01.00]la\n[00:02.00]lo" }).lyrics.sync, "line")
+} })
+cases.push({ name: "betterlyrics qq: plain LRC fallback, bare QRC; unusable text is notfound", fn: () => {
+    assert.equal(blJson("qq", { lyrics: "[00:01.00]la\n[00:02.00]lo" }).lyrics.sync, "line")
+    assert.equal(blJson("qq", { lyrics: "[1000,1000]la (1000,500)lo(1500,500)" }).lyrics.sync, "word")
+    assert.deepEqual(blJson("qq", { lyrics: "no timing at all" }), { kind: "notfound", reason: "unparseable" })
+    assert.deepEqual(blJson("qq", { lyrics: "  " }), { kind: "notfound", reason: "empty" })
+    assert.deepEqual(blJson("betterlyrics", { ttml: "" }), { kind: "notfound", reason: "empty" })
+    assert.deepEqual(blJson("betterlyrics", { ttml: "<tt><body" }), { kind: "notfound", reason: "unparseable" })
+    assert.deepEqual(blJson("betterlyrics", { lyrics: "[00:01.00]la" }), { kind: "notfound", reason: "empty" })
+} })
+cases.push({ name: "betterlyrics: payload URLs and extra fields never reach the credits", fn: () => {
+    const m = blJson("betterlyrics", { ttml: fixture("ttml/line.ttml"), url: "https://evil.example/", credits: [{ text: "x", url: "https://evil.example/" }], score: 0.9 })
+    assert.equal(m.kind, "found")
+    assert.deepEqual(m.credits, BL_CREDITS("betterlyrics"))
+    assert.equal(JSON.stringify(m).indexOf("evil.example"), -1)
+} })
+cases.push({ name: "betterlyrics: body over the cap is an error; hostile input never throws for any endpoint", fn: () => {
+    assert.equal(bl.mapLookup("qq", 200, {}, new Array(MAX_BODY_BYTES + 2).join("x")).kind, "error")
+    const bodies = [null, undefined, 5, {}, [], "null", "[]", '{"ttml":5}', '{"lyrics":{}}', '{"ttml":null,"lyrics":null}', "<html>", "{", '{"lyrics":"' + new Array(5000).join("(") + '"}']
+    const names = ["betterlyrics", "kugou", "qq", "nope", undefined]
+    const statuses = [200, 401, 404, 422, 429, 500, 503, 0, 302]
+    for (let i = 0; i < bodies.length; i++) {
+        for (let k = 0; k < names.length; k++) {
+            for (let n = 0; n < statuses.length; n++) {
+                const r = bl.mapLookup(names[k], statuses[n], null, bodies[i])
+                assert.ok(typeof r.kind === "string")
+            }
+        }
+    }
+    assert.equal(bl.mapLookup("nope", 200, {}, '{"lyrics":"la"}').kind, "error")
+} })
+cases.push({ name: "betterlyrics constants: host allow-list, defaults, labels, shared cooldown group", fn: () => {
+    assert.equal(BETTERLYRICS_BASE, "https://api.betterlyrics.org")
+    assert.ok(ALLOWED_HOSTS.indexOf("api.betterlyrics.org") >= 0)
+    assert.ok(ALLOWED_HOSTS.indexOf("better-lyrics.boidu.dev") < 0) // the credit site is only ever opened in the browser
+    assert.deepEqual(PROVIDER_NAMES, ["lrclib", "unison", "betterlyrics", "kugou", "qq"])
+    assert.equal(DEFAULT_PROVIDERS, "lrclib,unison,betterlyrics") // kugou and qq are opt-in
+    for (let i = 0; i < PROVIDER_NAMES.length; i++) {
+        assert.ok(providerLabel(PROVIDER_NAMES[i]) !== "")
+        assert.ok(COOLDOWN_GROUP[PROVIDER_NAMES[i]] !== undefined)
+    }
+    assert.equal(COOLDOWN_GROUP.kugou, COOLDOWN_GROUP.betterlyrics)
+    assert.equal(COOLDOWN_GROUP.qq, COOLDOWN_GROUP.betterlyrics)
+    assert.ok(COOLDOWN_GROUP.unison !== COOLDOWN_GROUP.betterlyrics)
+    assert.equal(providerLabel("kugou"), "Kugou (Better Lyrics)")
+    assert.equal(providerLabel("constructor"), "")
+    assert.equal(providerLabel("__proto__"), "")
+    assert.equal(providerLabel(undefined), "")
+    assert.deepEqual(SERVER_MATCHED, ["unison", "betterlyrics", "kugou", "qq"])
 } })

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<QrcInfos>
+<QrcHeadInfo SaveTime="1000000000000" Version="100"/>
+<LyricInfo LyricCount="1">
+<Lyric_1 LyricType="1" LyricContent="[ti:Placeholder Title]
+[ar:Placeholder Artist]
+[al:Placeholder Album]
+[by:]
+[offset:0]
+[1000,2400]la (1000,600)la (1600,600)lo(2200,1200)
+[4000,2000]na (4000,500)na (4500,500)ooh(5000,1000)
+[7000,1500]la (7000,700)lo(7700,800)
+"/>
+</LyricInfo>
+</QrcInfos>

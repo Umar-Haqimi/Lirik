@@ -14,7 +14,7 @@ const list = (d) => fs.readdirSync(path.join(ROOT, d)).sort().map((f) => d + "/"
 const words = (s) => s.split(/\s+/).filter(Boolean)
 
 // Placeholder / invented words and the format syntax words (tag and key names) of the fixture families
-// tests/fixtures/{lrc,lyricsfile,ttml,malformed-ttml}.
+// tests/fixtures/{lrc,lyricsfile,ttml,malformed-ttml,qrc}.
 const PLACEHOLDER = words(`
   a across after agent al album all alpha amp ampersand and aped apos apple aqui ar artist b backslash before begin
   beta bg bis blank body bold boom both brackets by c caf ce change character chorus cinco cite city close colon com
@@ -29,6 +29,7 @@ const PLACEHOLDER = words(`
   tag tarum tercera text the there third this ti time timing title together torture trailing translation
   translations transliteration transliterations tres true tt ttm ttml two type ultima uno until utf v ve vela vena
   verse version voice vora w wela will with without word words www x xml xmlns yo zora
+  qrcinfos qrcheadinfo savetime lyricinfo lyriccount lyrictype lyriccontent
   é の の星 二行目 夜 夜空 夜空の星 星 空
 `)
 
@@ -59,7 +60,7 @@ const unknown = (text, extra) => {
     return [...bad]
 }
 
-for (const dir of ["lrc", "lyricsfile", "ttml", "malformed-ttml"]) {
+for (const dir of ["lrc", "lyricsfile", "ttml", "malformed-ttml", "qrc"]) {
     test(`fixtures/${dir} use only the placeholder vocabulary`, () => {
         const files = list("tests/fixtures/" + dir)
         assert.ok(files.length >= 5)
@@ -70,7 +71,7 @@ for (const dir of ["lrc", "lyricsfile", "ttml", "malformed-ttml"]) {
 }
 
 test("fixtures/api lyric bodies contain only wN placeholders and format syntax", () => {
-    const BODY_KEYS = new Set(["plainLyrics", "syncedLyrics", "lyricsfile", "lyrics", "plain", "text"])
+    const BODY_KEYS = new Set(["plainLyrics", "syncedLyrics", "lyricsfile", "lyrics", "plain", "text", "ttml"])
     const collect = (v, key, out) => {
         if (typeof v === "string") { if (BODY_KEYS.has(key)) out.push(v) }
         else if (Array.isArray(v)) v.forEach((x) => collect(x, key, out))
@@ -85,7 +86,9 @@ test("fixtures/api lyric bodies contain only wN placeholders and format syntax",
         for (const text of collect(body, "", [])) {
             bodies++
             // TTML inside a lyrics string: tags and attributes are syntax; compare the vocabulary of everything else
-            const stripped = text.replace(/<[^>]*>/g, " ").replace(/\bw\d+\b/g, " ")
+            // QRC inside its XML wrapper lives in the LyricContent attribute: check that, not the (stripped) tags.
+            const qrc = /LyricContent="([^"]*)"/.exec(text)
+            const stripped = (qrc ? qrc[1] : text).replace(/<[^>]*>/g, " ").replace(/\bw\d+\b/g, " ")
             assert.deepEqual(unknown(stripped, API_SYNTAX), [], f + " has a lyric body with non-placeholder words")
         }
     }

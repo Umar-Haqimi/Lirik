@@ -110,8 +110,9 @@ test("no process-execution or dynamic-code APIs anywhere in src/", () => {
 })
 
 // --- network ----------------------------------------------------------------------------------------
-test("only the two provider hosts (plus the loopback dev origin) are referenced by Lirik code", () => {
-    const allowed = new Set(["lrclib.net", "unison.betterlyrics.org", "127.0.0.1", "github.com"])
+test("only the provider hosts (plus the credit-link site and the loopback dev origin) are referenced by Lirik code", () => {
+    // better-lyrics.boidu.dev is only a credit link opened in the browser; it is never requested (not in ALLOWED_HOSTS).
+    const allowed = new Set(["lrclib.net", "unison.betterlyrics.org", "api.betterlyrics.org", "better-lyrics.boidu.dev", "127.0.0.1", "github.com"])
     const seen = new Set()
     for (const p of LIRIK) {
         for (const mm of read(p).matchAll(/\b(?:https?|wss?|ftp):\/\/([A-Za-z0-9._-]+)/g)) {
@@ -119,12 +120,16 @@ test("only the two provider hosts (plus the loopback dev origin) are referenced 
             assert.ok(allowed.has(mm[1]), `${rel(p)}: host ${mm[1]} is not allowed`)
         }
     }
-    assert.ok(seen.has("lrclib.net") && seen.has("unison.betterlyrics.org"))
+    assert.ok(seen.has("lrclib.net") && seen.has("unison.betterlyrics.org") && seen.has("api.betterlyrics.org"))
     // github.com is only the project URL inside the User-Agent (never requested): constants.mjs
     for (const p of LIRIK) {
         if (rel(p) !== "src/contents/code/constants.mjs") assert.ok(!/github\.com/.test(read(p)), rel(p) + " mentions github.com")
     }
-    assert.deepEqual([...C.ALLOWED_HOSTS].sort(), ["lrclib.net", "unison.betterlyrics.org"])
+    assert.deepEqual([...C.ALLOWED_HOSTS].sort(), ["api.betterlyrics.org", "lrclib.net", "unison.betterlyrics.org"])
+    assert.equal(new URL(C.BETTERLYRICS_BASE).protocol, "https:")
+    assert.ok(C.ALLOWED_HOSTS.includes(new URL(C.BETTERLYRICS_BASE).hostname))
+    assert.equal(new URL(C.BETTERLYRICS_SITE).protocol, "https:")
+    assert.ok(!C.ALLOWED_HOSTS.includes(new URL(C.BETTERLYRICS_SITE).hostname))
     assert.equal(new URL(C.LRCLIB_BASE).protocol, "https:")
     assert.equal(new URL(C.UNISON_BASE).protocol, "https:")
     assert.ok(C.ALLOWED_HOSTS.includes(new URL(C.LRCLIB_BASE).hostname))

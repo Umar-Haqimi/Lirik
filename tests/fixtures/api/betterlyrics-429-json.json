@@ -1,0 +1,12 @@
+{
+  "source": "synthetic, shape taken from https://docs.betterlyrics.org/docs/rate-limiting and the API's OpenAPI document (not a live sample)",
+  "request": "https://api.betterlyrics.org/getLyrics?…",
+  "status": 429,
+  "headers": {
+    "content-type": "application/json",
+    "retry-after": "60",
+    "x-ratelimit-type": "cached",
+    "x-cache-status": "MISS"
+  },
+  "body": "{\"error\":\"Rate limit exceeded. This request requires cached data, but no cache is available for this query.\",\"message\":\"Please try again later or reduce your request rate.\"}"
+}

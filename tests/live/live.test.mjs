@@ -7,12 +7,16 @@ import assert from "node:assert/strict"
 import { clean } from "../../src/contents/code/trackinfo.mjs"
 import * as lr from "../../src/contents/code/providers/lrclib.mjs"
 import * as un from "../../src/contents/code/providers/unison.mjs"
+import * as bl from "../../src/contents/code/providers/betterlyrics.mjs"
 
 const LIVE = process.env.LIRIK_LIVE === "1"
 const info = clean({ title: "Bohemian Rhapsody", artist: "Queen", album: "A Night at the Opera", lengthUs: 354e6, artUrl: "", identity: "live-test" })
 
 // Unison coverage is sparse: use a track the probe tool verified (docs/FIXTURES.md), looked up by video id.
 const unInfo = clean({ title: "Explorer", artist: "Justice", album: "", lengthUs: 391e6, artUrl: "https://i.ytimg.com/vi/Ugr4KKK_SqY/maxresdefault.jpg", identity: "live-test" })
+
+// Better Lyrics API: only songs already in its cache are served (an uncached song is a 401), so use one the probe saw.
+const blInfo = clean({ title: "Viva la Vida", artist: "Coldplay", album: "Viva la Vida or Death and All His Friends", lengthUs: 242e6, artUrl: "", identity: "live-test" })
 
 async function call(spec, mapper) {
     const r = await fetch(spec.url, { headers: spec.headers, signal: AbortSignal.timeout(15000) })
@@ -45,3 +49,12 @@ test("live: Unison lookup", { skip: !LIVE && "set LIRIK_LIVE=1" }, async () => {
     const m = await call(un.buildLookup(unInfo, {}), (s, h, b) => un.mapLookup(s, h, b, {}))
     assertLyrics(m, "unison")
 })
+
+for (const name of ["betterlyrics", "kugou", "qq"]) {
+    test("live: Better Lyrics API " + name, { skip: !LIVE && "set LIRIK_LIVE=1" }, async () => {
+        const spec = bl.buildLookup(name, blInfo, {})
+        const m = await call(spec, (s, h, b) => bl.mapLookup(name, s, h, b, spec))
+        assertLyrics(m, name)
+        assert.equal(m.credits[0].url, "https://better-lyrics.boidu.dev")
+    })
+}

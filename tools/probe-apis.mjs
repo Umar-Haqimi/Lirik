@@ -6,6 +6,7 @@
 //
 //   node tools/probe-apis.mjs            # fetch everything
 //   node tools/probe-apis.mjs --dry-run  # list the requests only
+//   node tools/probe-apis.mjs --only betterlyrics   # only the requests whose name starts with this
 
 import fs from "node:fs"
 import path from "node:path"
@@ -16,6 +17,9 @@ const dry = process.argv.includes("--dry-run")
 
 const lrclib = (p) => "https://lrclib.net" + p
 const unison = (p) => "https://unison.betterlyrics.org" + p
+const bl = (p) => "https://api.betterlyrics.org" + p
+const onlyIdx = process.argv.indexOf("--only")
+const only = onlyIdx > 0 ? process.argv[onlyIdx + 1] : ""
 
 // Fixed requests: each name becomes .local/samples/<name>.json
 const FIXED = [
@@ -33,7 +37,15 @@ const FIXED = [
     ["unison-lyrics-404", unison("/lyrics?song=zzzz+lirik+probe&artist=zzzz+nobody")],
     ["unison-lyrics-400", unison("/lyrics")],
     ["unison-search", unison("/lyrics/search?q=explorer+justice")],
+    // Better Lyrics API (api.betterlyrics.org): one cache-hit-likely song, one that is surely not cached.
+    ["betterlyrics-lyrics", bl("/getLyrics?s=Viva+la+Vida&a=Coldplay&al=Viva+la+Vida+or+Death+and+All+His+Friends&d=242")],
+    ["betterlyrics-404", bl("/getLyrics?s=zzzz+lirik+probe&a=zzzz+nobody&d=180")],
+    ["betterlyrics-422", bl("/getLyrics")],
+    ["betterlyrics-kugou", bl("/kugou/getLyrics?s=Viva+la+Vida&a=Coldplay&d=242")],
+    ["betterlyrics-qq", bl("/qq/getLyrics?s=Viva+la+Vida&a=Coldplay&d=242")],
+    ["betterlyrics-kugou-404", bl("/kugou/getLyrics?s=zzzz+lirik+probe&a=zzzz+nobody&d=180")],
 ]
+const REQUESTS = only ? FIXED.filter(([n]) => n.startsWith(only)) : FIXED
 
 // Unison discovery: search a few queries, keep the first candidate per format/syncType.
 const UNISON_DISCOVERY = ["q=love", "q=night", "q=rain", "q=dance", "q=home", "q=fire"]
@@ -52,15 +64,16 @@ function save(name, rec) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 if (dry) {
-    for (const [n, u] of FIXED) console.log(n, u)
+    for (const [n, u] of REQUESTS) console.log(n, u)
     process.exit(0)
 }
 
 fs.mkdirSync(OUT, { recursive: true })
-for (const [name, url] of FIXED) {
+for (const [name, url] of REQUESTS) {
     save(name, await get(url))
     await sleep(400) // LRCLIB asks for 200–500 ms between sequential requests
 }
+if (only) process.exit(0) // the Unison ETag / discovery steps below are not part of a filtered run
 
 // ETag round trip
 const first = JSON.parse(fs.readFileSync(path.join(OUT, "unison-lyrics-v.json"), "utf8"))

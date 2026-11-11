@@ -5,6 +5,7 @@ import { spawn } from "node:child_process"
 import { clean } from "../../src/contents/code/trackinfo.mjs"
 import * as lr from "../../src/contents/code/providers/lrclib.mjs"
 import * as un from "../../src/contents/code/providers/unison.mjs"
+import * as bl from "../../src/contents/code/providers/betterlyrics.mjs"
 
 const PORT = 47900 + Math.floor(Math.random() * 90)
 const BASE = "http://127.0.0.1:" + PORT
@@ -76,6 +77,34 @@ test("stub: Unison ttml word sync, etag 304, id lookup, not found", async () => 
     const line = await fetchMapped(un.buildLookup(info("Line Placeholder", 185), { base: BASE }), (s, h, b) => un.mapLookup(s, h, b, {}))
     assert.equal(line.lyrics.sync, "line")
     assert.equal((await fetchMapped(un.buildLookup(info("Missing Placeholder", 150), { base: BASE }), (s, h, b) => un.mapLookup(s, h, b, {}))).kind, "notfound")
+})
+
+test("stub: Better Lyrics API endpoints (TTML, LRC, QRC in its XML wrapper), 401 for an uncached song, 422, keywords", async () => {
+    const get = (name, title, len) => fetchMapped(bl.buildLookup(name, info(title, len), { base: BASE }), (s, h, b) => bl.mapLookup(name, s, h, b, bl.buildLookup(name, info(title, len), { base: BASE })))
+    const w = await get("betterlyrics", "Gapped Placeholder", 180)
+    assert.equal(w.kind, "found")
+    assert.equal(w.lyrics.sync, "word")
+    assert.equal(w.provider, "betterlyrics")
+    const k = await get("kugou", "Gapped Placeholder", 180)
+    assert.equal(k.kind, "found")
+    assert.equal(k.lyrics.sync, "line")
+    const q = await get("qq", "Gapped Placeholder", 180)
+    assert.equal(q.kind, "found")
+    assert.equal(q.lyrics.sync, "word")
+    assert.equal(q.lyrics.lines.length, w.lyrics.lines.length)
+    assert.equal(q.lyrics.lines[0].start, w.lyrics.lines[0].start)
+    assert.equal((await get("betterlyrics", "Line Placeholder", 185)).lyrics.sync, "line")
+    assert.deepEqual(await get("qq", "Line Placeholder", 185), { kind: "notfound", reason: "uncached" })
+    assert.deepEqual(await get("betterlyrics", "Plain Placeholder", 200), { kind: "notfound", reason: "uncached" })
+    assert.deepEqual(await get("kugou", "Missing Placeholder", 150), { kind: "notfound", reason: "uncached" })
+    assert.deepEqual(await get("betterlyrics", "Gapped Placeholder ~404", 180), { kind: "notfound", reason: "none" })
+    assert.deepEqual(await get("betterlyrics", "Gapped Placeholder ~401", 180), { kind: "notfound", reason: "uncached" })
+    const rl = await get("qq", "Gapped Placeholder ~429", 180)
+    assert.equal(rl.kind, "ratelimited")
+    assert.equal(rl.retryAfterS, 3)
+    assert.equal((await get("kugou", "Gapped Placeholder ~503", 180)).kind, "error")
+    const none = await fetch(BASE + "/getLyrics")
+    assert.equal(none.status, 422)
 })
 
 test("stub: keywords and control endpoint inject failures, /__log records requests", async () => {

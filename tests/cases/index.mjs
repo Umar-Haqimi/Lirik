@@ -7,6 +7,7 @@ import { cases as yaml } from "./yaml.cases.mjs"
 import { cases as lyricsfile } from "./lyricsfile.cases.mjs"
 import { cases as xml } from "./xml.cases.mjs"
 import { cases as ttml } from "./ttml.cases.mjs"
+import { cases as qrc } from "./qrc.cases.mjs"
 import { cases as fuzz } from "./fuzz.cases.mjs"
 import { cases as timeline } from "./timeline.cases.mjs"
 import { cases as clock } from "./clock.cases.mjs"
@@ -24,6 +25,7 @@ export const suites = [
     ["lyricsfile", lyricsfile],
     ["xml", xml],
     ["ttml", ttml],
+    ["qrc", qrc],
     ["fuzz", fuzz],
     ["timeline", timeline],
     ["clock", clock],

@@ -1,0 +1,11 @@
+{
+  "source": "synthetic, shape taken from https://docs.betterlyrics.org/docs/rate-limiting and the API's OpenAPI document (not a live sample)",
+  "request": "https://api.betterlyrics.org/getLyrics?…",
+  "status": 429,
+  "headers": {
+    "content-type": "text/plain; charset=utf-8",
+    "retry-after": "1",
+    "x-ratelimit-type": "exceeded"
+  },
+  "body": "Too Many Requests\n"
+}

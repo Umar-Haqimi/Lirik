@@ -116,6 +116,32 @@ function scrubUnisonData(d, s, n) {
     return out
 }
 
+// QRC (QQ): `[ti:..]` ID tags and `[startMs,durMs]word(startMs,durMs)word(startMs,durMs)` lines, usually
+// inside the XML wrapper's `LyricContent="..."` attribute. Timings are kept, every word is replaced.
+const QRC_TAGS = { ti: "Placeholder Title", ar: "Placeholder Artist", al: "Placeholder Album", by: "" }
+function scrubQrcContent(c, s) {
+    return c.split("\n").map((line) => {
+        const id = line.match(/^\[([A-Za-z]+):(.*)\]\s*$/)
+        if (id) return `[${id[1]}:${Object.prototype.hasOwnProperty.call(QRC_TAGS, id[1].toLowerCase()) ? QRC_TAGS[id[1].toLowerCase()] : id[2]}]`
+        const t = line.match(/^(\[\d+,\d+\])(.*)$/)
+        if (!t) return line
+        return t[1] + t[2].replace(/([^()]*)(\(\d+,\d+\))|([^()]+)$/g, (m, text, timing, tail) => tail !== undefined ? s(tail) : s(text) + timing)
+    }).join("\n")
+}
+
+function scrubQrc(text, s) {
+    const m = text.match(/^([\s\S]*?LyricContent=")([\s\S]*?)("\s*\/>[\s\S]*)$/)
+    if (!m) return scrubQrcContent(text, s) // not wrapped
+    return m[1] + scrubQrcContent(m[2], s) + m[3]
+}
+
+function scrubBetterLyrics(j, s) {
+    const out = { ...j }
+    if (typeof out.ttml === "string") out.ttml = scrubXmlText(out.ttml, s)
+    if (typeof out.lyrics === "string") out.lyrics = out.provider === "qq" ? scrubQrc(out.lyrics, s) : scrubLrc(out.lyrics, s)
+    return out
+}
+
 function scrubBody(name, body, n) {
     const s = makeScrubber()
     let j
@@ -123,6 +149,10 @@ function scrubBody(name, body, n) {
     if (name.startsWith("lrclib")) {
         if (Array.isArray(j)) return JSON.stringify(j.map((r) => scrubLrclibRecord(r, makeScrubber())))
         if (j && "trackName" in j) return JSON.stringify(scrubLrclibRecord(j, s))
+        return body
+    }
+    if (name.startsWith("betterlyrics")) {
+        if (j && (typeof j.ttml === "string" || typeof j.lyrics === "string")) return JSON.stringify(scrubBetterLyrics(j, s))
         return body
     }
     if (name.startsWith("unison")) {
@@ -134,7 +164,7 @@ function scrubBody(name, body, n) {
 }
 
 // Headers worth keeping in fixtures (the rest is CDN noise).
-const KEEP_HEADERS = ["content-type", "etag", "retry-after", "cache-control"]
+const KEEP_HEADERS = ["content-type", "etag", "retry-after", "cache-control", "x-cache-status", "x-provider", "x-ratelimit-type", "x-auth-mode"]
 
 fs.mkdirSync(outDir, { recursive: true })
 const files = fs.readdirSync(inDir).filter((f) => f.endsWith(".json")).sort()

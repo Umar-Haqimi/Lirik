@@ -87,8 +87,24 @@ export const CLICK_FOLLOW_MS = 1500
 // --- Providers --------------------------------------------------------------
 export const LRCLIB_BASE = "https://lrclib.net"
 export const UNISON_BASE = "https://unison.betterlyrics.org"
-export const ALLOWED_HOSTS = ["lrclib.net", "unison.betterlyrics.org"]
-export const PROVIDER_NAMES = ["lrclib", "unison"]
+export const BETTERLYRICS_BASE = "https://api.betterlyrics.org"
+export const BETTERLYRICS_SITE = "https://better-lyrics.boidu.dev" // credit link for the Better Lyrics API providers
+export const ALLOWED_HOSTS = ["lrclib.net", "unison.betterlyrics.org", "api.betterlyrics.org"]
+// One entry per selectable provider. betterlyrics / kugou / qq are three endpoints of the same API.
+export const PROVIDER_NAMES = ["lrclib", "unison", "betterlyrics", "kugou", "qq"]
+export const DEFAULT_PROVIDERS = "lrclib,unison,betterlyrics" // kugou and qq are opt-in
+export const PROVIDER_LABELS = {
+    lrclib: "LRCLIB", unison: "Unison", betterlyrics: "Better Lyrics",
+    kugou: "Kugou (Better Lyrics)", qq: "QQ (Better Lyrics)",
+}
+/** Display name of a provider id, or "" for an unknown one (never a prototype member). */
+export function providerLabel(name) {
+    return Object.prototype.hasOwnProperty.call(PROVIDER_LABELS, name) ? PROVIDER_LABELS[name] : ""
+}
+// One per-IP rate limiter covers the whole Better Lyrics API, so a 429 pauses all three endpoints.
+export const COOLDOWN_GROUP = { lrclib: "lrclib", unison: "unison", betterlyrics: "betterlyrics", kugou: "betterlyrics", qq: "betterlyrics" }
+// Providers that match by title / artist / duration on their own side (the duration filter is theirs).
+export const SERVER_MATCHED = ["unison", "betterlyrics", "kugou", "qq"]
 
 // --- Lookup pipeline additions (M4) ----------------------------------------
 export const DURATION_UNKNOWN_SCORE = 0.2 // a candidate with no duration ranks below any known match

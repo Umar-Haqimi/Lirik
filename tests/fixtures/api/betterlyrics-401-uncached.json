@@ -1,0 +1,12 @@
+{
+  "source": "scrubbed live sample (tools/probe-apis.mjs + tools/scrub.mjs)",
+  "request": "https://api.betterlyrics.org/getLyrics?…",
+  "status": 401,
+  "headers": {
+    "content-type": "application/json",
+    "x-cache-status": "MISS",
+    "x-ratelimit-type": "normal",
+    "x-auth-mode": "cache"
+  },
+  "body": "{\"error\":\"API key required\",\"message\":\"Uncached queries require a valid API key via X-API-Key header\"}\n"
+}
